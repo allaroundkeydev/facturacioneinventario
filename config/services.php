@@ -34,5 +34,9 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'dte' => [
+    'hacienda_url' => env('DTE_HACIENDA_URL', 'https://apitest.dtes.mh.gob.sv'),
+    'signer_url' => env('DTE_SIGNER_URL', 'http://localhost:8113'),
+],
 
 ];

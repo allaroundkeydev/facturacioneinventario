@@ -8,7 +8,7 @@ class Cliente extends Model
     protected $table = 'clientes';
     
     protected $fillable = [
-        'nit', 'dui', 'nombre', 'correo', 'direccion',
+        'nit', 'dui', 'nombre', 'correo', 'complemento',
         'telefono', 'tipo_documento', 'departamento', 'municipio',  // nuevos campos DTE
         'nrc', 'cod_actividad','desc_actividad',
     ];

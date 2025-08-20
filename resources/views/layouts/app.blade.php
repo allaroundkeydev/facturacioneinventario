@@ -32,5 +32,7 @@
                 {{ $slot }}
             </main>
         </div>
+        {{-- Scripts apilados desde las vistas --}}
+    @stack('scripts')
     </body>
 </html>

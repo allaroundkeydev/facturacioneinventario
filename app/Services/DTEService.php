@@ -1,247 +1,244 @@
 <?php
-//app\Services\DTEService.php
+
 namespace App\Services;
 
-use App\Models\Empresa;
 use App\Models\Dte;
-use Illuminate\Support\Facades\DB;
+use App\Models\Empresa;
+use App\Models\Token;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 use Exception;
 
 class DTEService
 {
-    private $haciendaUrl = 'https://apitest.dtes.mh.gob.sv';
+    protected string $haciendaUrl;
+    protected string $signerUrl;
 
     public function __construct()
     {
-        // Use the environment variable for the production URL if available
-        $this->haciendaUrl = env('HACIENDA_API_URL', $this->haciendaUrl);
+        $this->haciendaUrl = rtrim(config('services.dte.hacienda_url', env('DTE_HACIENDA_URL', 'https://apitest.dtes.mh.gob.sv')), '/');
+
+        $signer = config('services.dte.signer_url', env('DTE_SIGNER_URL', 'http://localhost:8113'));
+        $this->signerUrl = rtrim($signer, '/');
     }
 
     /**
-     * Emite la factura electrónica: recupera token, firma el DTE y lo envía a Hacienda.
+     * Emite (firma + envía) un DTE y actualiza la fila correspondiente.
      *
-     * @param Dte $dte   Modelo Dte con los datos del DTE
-     * @return array     Respuesta decodificada de Hacienda
+     * @param  Dte  $dte
+     * @return array Resumen de la respuesta
      * @throws Exception
      */
-    public function emitirFactura(Dte $dte): array
+    public function emitir(Dte $dte): array
     {
-        $empresa = Empresa::where('usuario_id', $dte->usuario_id)->first();
-        if (!$empresa) {
-            throw new Exception('Emisor no encontrado en BD.');
+        // 1) Cargar user y empresa emisora
+        $user = $dte->usuario_id ? \App\Models\User::find($dte->usuario_id) : null;
+        if (! $user) {
+            throw new Exception("No se encontró el usuario asociado al DTE (usuario_id={$dte->usuario_id}).");
         }
 
-        // 1) Obtener credenciales del emisor (API, clave privada, NIT)
-        $apiUser = $empresa->api_user ?? '';
-        $apiPass = $empresa->api_password ?? '';
-        $privKeyPass = $empresa->key_password ?? '';
+        $empresa = $user->empresa ?? null;
+        if (! $empresa instanceof Empresa) {
+            throw new Exception('Empresa emisora no encontrada para el usuario.');
+        }
 
-        // Limpiamos posibles guiones/puntos del NIT
-        $nit = preg_replace('/\D/', '', $empresa->nit);
+        // 2) Obtener token válido para la empresa
+        $token = $this->getTokenForEmpresa($empresa);
 
-        // 2) TOKEN: recuperar de BD o solicitar uno nuevo
-        $token = $this->obtenerToken($empresa->id, $apiUser, $apiPass);
-
-        // 3) FIRMAR en Docker
+        // 3) Preparar DTE (array)
         $dteArray = $dte->dte_json;
-        if (!is_array($dteArray)) {
-            throw new Exception('El JSON de DTE no es válido.');
+        if (! is_array($dteArray)) {
+            throw new Exception('El campo dte_json del DTE no es un array válido.');
         }
 
-        $payloadFirm = [
-            'nit'         => $apiUser,
-            'activo'      => true,
-            'passwordPri' => $privKeyPass,
-            'dteJson'     => $dteArray
-        ];
+        // 4) Firmar en Docker
+        $jwtFirmado = $this->signWithDocker($empresa, $dteArray);
 
-        $jwtFirmado = $this->firmarDocumento($payloadFirm);
+        // Comprobar que se obtuvo algo del firmador
+        if (empty($jwtFirmado)) {
+            throw new Exception('Firma vacía: el firmador no devolvió contenido válido.');
+        }
 
-        // 4) Inyectar firma dentro del documento DTE
+        // 5) Inyectar firma dentro del documento DTE (como hace el ejemplo)
         $dteArray['firmaElectronica'] = $jwtFirmado;
 
-        // 5) Preparar paquete para Hacienda (firma ya dentro de 'documento')
+        // 6) Preparar paquete para Hacienda (siguiendo el ejemplo)
         $paquete = [
             'ambiente'         => $dteArray['identificacion']['ambiente'],
             'idEnvio'          => time(),
             'version'          => (int)$dteArray['identificacion']['version'],
             'tipoDte'          => $dteArray['identificacion']['tipoDte'],
-            'documento'        => $jwtFirmado,
+            'documento'        => $jwtFirmado,  // JWT firmado como string
         ];
 
-        $envioPayload = json_encode(
-            $paquete,
-            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT
-        );
+        // Log breve del payload (no incluir la firma completa)
+        Log::info('DTE -> Envío a Hacienda (resumen payload): ' . json_encode([
+            'idEnvio' => $paquete['idEnvio'],
+            'tipoDte' => $paquete['tipoDte'],
+            'ambiente'=> $paquete['ambiente'],
+            'documento_length' => strlen($jwtFirmado)
+        ]));
 
-        if ($envioPayload === false) {
-            throw new Exception('Error al codificar payload: ' . json_last_error_msg());
+        // 7) Envío a Hacienda
+        $urlSend = $this->haciendaUrl . '/fesv/recepciondte/';
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->timeout(90)
+            ->post($urlSend, $paquete);
+
+        $httpCode = $response->status();
+        $respBody = $response->body();
+        $respJson = null;
+        
+        try {
+            $respJson = $response->json();
+        } catch (\Throwable $ex) {
+            // no pudo parsear JSON
+            Log::warning("No se pudo parsear JSON de respuesta Hacienda: " . $ex->getMessage());
         }
 
-        // 6) Envío a Hacienda
-        $response = $this->enviarDTE($envioPayload, $token);
+        // Log completo de respuesta (útil para depuración)
+        Log::info("Respuesta Hacienda HTTP {$httpCode} - body: " . substr($respBody, 0, 4000));
 
-        // 7) Actualizar el registro DTE con la respuesta
-        $dte->update([
-            'respuesta_json' => $response,
-            'estado' => $response['estado'] ?? 'DESCONOCIDO'
-        ]);
+        // 8) Guardar respuesta en DTE
+        $dte->respuesta_json = $respJson ?? $respBody;
+        $dte->estado = $respJson['estado'] ?? ($httpCode === 200 ? 'PROCESADO' : 'ERROR_' . $httpCode);
+        $dte->codigo_generacion = $respJson['codigoGeneracion'] ?? $dte->codigo_generacion;
+        $dte->save();
 
-        return $response;
+        if ($httpCode !== 200) {
+            // Lanzar excepción con el body (acotado) para que la UI lo muestre si corresponde
+            throw new Exception("Hacienda devolvió HTTP {$httpCode}: " . substr($respBody, 0, 2000));
+        }
+
+        return [
+            'http_code' => $httpCode,
+            'estado'    => $dte->estado,
+            'codigo'    => $dte->codigo_generacion,
+            'response'  => $respJson ?? $respBody,
+        ];
     }
 
     /**
-     * Obtiene un token de autenticación de Hacienda
+     * Obtiene o solicita token para la empresa.
      *
-     * @param int $empresaId
-     * @param string $apiUser
-     * @param string $apiPass
-     * @return string Token de autenticación
+     * @param Empresa $empresa
+     * @return string
      * @throws Exception
      */
-    private function obtenerToken(int $empresaId, string $apiUser, string $apiPass): string
+    protected function getTokenForEmpresa(Empresa $empresa): string
     {
-        // Verificar si ya tenemos un token válido
-        $tokenRecord = DB::table('tokens')->where('usuario_id', $empresaId)->first();
-        $now = new \DateTime();
+        $now = Carbon::now();
+        $tokRow = Token::where('empresa_id', $empresa->id)->first();
 
-        if ($tokenRecord && new \DateTime($tokenRecord->expire_at) > $now) {
-            // Todavía no ha expirado
-            return $tokenRecord->token;
+        if ($tokRow && $tokRow->expire_at && Carbon::parse($tokRow->expire_at)->greaterThan($now)) {
+            Log::info("Token válido encontrado para empresa_id={$empresa->id}");
+            return $tokRow->token;
         }
 
         // Solicitar nuevo token
-        $postFields = http_build_query([
-            'user' => $apiUser,
-            'pwd'  => $apiPass
-        ]);
+        $urlAuth = $this->haciendaUrl . '/seguridad/auth/';
 
-        $chAuth = curl_init(rtrim($this->haciendaUrl, '/') . '/seguridad/auth/');
-        curl_setopt_array($chAuth, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $postFields,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/x-www-form-urlencoded',
-                'User-Agent: factura-electronica-client'
-            ],
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-        ]);
+        $resp = Http::asForm()
+            ->acceptJson()
+            ->timeout(30)
+            ->post($urlAuth, [
+                'user' => $empresa->api_user,
+                'pwd'  => $empresa->api_password,
+            ]);
 
-        $authResp = curl_exec($chAuth);
-        $code     = curl_getinfo($chAuth, CURLINFO_HTTP_CODE);
-        curl_close($chAuth);
-
-        if ($authResp === false) {
-            throw new Exception('Error CURL auth (sin respuesta).');
-        }
-        if ($code !== 200) {
-            throw new Exception("Auth falló, HTTP $code, respuesta: $authResp");
+        if (! $resp->ok()) {
+            Log::error("Auth HACIENDA falló HTTP {$resp->status()} - body: " . $resp->body());
+            throw new Exception("Auth a Hacienda falló. HTTP {$resp->status()}");
         }
 
-        $authData = json_decode($authResp, true);
-        if (!isset($authData['status']) || strtoupper($authData['status']) !== 'OK') {
-            $err = $authData['error'] ?? json_encode($authData);
-            throw new Exception("Auth rechazado: $err");
+        $json = $resp->json();
+        if (! isset($json['status']) || strtoupper($json['status']) !== 'OK') {
+            $err = $json['error'] ?? json_encode($json);
+            throw new Exception("Auth rechazado por Hacienda: " . $err);
         }
 
-        $bearer = $authData['body']['token'] ?? '';
-        $token  = preg_replace('/^Bearer\s+/i', '', trim($bearer));
+        $bearer = $json['body']['token'] ?? null;
+        if (! $bearer) {
+            throw new Exception('No se recibió token en la respuesta de auth.');
+        }
+        
+        $token = preg_replace('/^Bearer\s+/i', '', trim($bearer));
+        $expireAt = Carbon::now()->addHours(23)->addMinutes(59)->toDateTimeString();
 
-        // Expira en ~24 horas
-        $expireAt = (new \DateTime())
-            ->add(new \DateInterval('PT23H59M'))
-            ->format('Y-m-d H:i:s');
+        // 🔹 MÉTODO MÁS SEGURO: Buscar y actualizar o crear manualmente
+        $existingToken = Token::where('empresa_id', $empresa->id)->first();
+        
+        if ($existingToken) {
+            $existingToken->update([
+                'token' => $token,
+                'expire_at' => $expireAt,
+            ]);
+        } else {
+            Token::create([
+                'empresa_id' => $empresa->id,
+                'token' => $token,
+                'expire_at' => $expireAt,
+            ]);
+        }
 
-        // Guardar o actualizar el token en la base de datos
-        DB::table('tokens')->updateOrInsert(
-            ['usuario_id' => $empresaId],
-            ['token' => $token, 'expire_at' => $expireAt]
-        );
+        Log::info("Token obtenido y guardado para empresa_id={$empresa->id} (expira: {$expireAt})");
 
         return $token;
     }
 
     /**
-     * Firma el documento DTE usando el servicio Docker
+     * Llama al firmador Docker y retorna la firma/resultado.
      *
-     * @param array $payload Datos para la firma
-     * @return string JWT firmado
+     * @param Empresa $empresa
+     * @param array $dteArray
+     * @return string
      * @throws Exception
      */
-    private function firmarDocumento(array $payload): string
+    protected function signWithDocker(Empresa $empresa, array $dteArray): string
     {
-        $payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
-        if ($payloadJson === false) {
-            throw new Exception('Error al codificar payloadFirm: ' . json_last_error_msg());
+        $payload = [
+            'nit'         => $empresa->api_user ?? $empresa->nit ?? null,
+            'activo'      => true,
+            'passwordPri' => $empresa->key_password ?? null,
+            'dteJson'     => $dteArray,
+        ];
+
+        // Log resumen (sin password)
+        $tmp = $payload;
+        unset($tmp['passwordPri']);
+        Log::info('Llamando firmador (docker) - payload summary: ' . json_encode($tmp));
+
+        $urlFirm = $this->signerUrl . '/firmardocumento/';
+
+        Log::info("Firmador URL utilizada: {$urlFirm}");
+
+        $resp = Http::timeout(60)
+            ->withHeaders([
+                'User-Agent' => 'factura-electronica-client',
+                'Content-Type' => 'application/json',
+            ])
+            ->post($urlFirm, $payload);
+
+        if (! $resp->ok()) {
+            Log::error("Firma falló HTTP {$resp->status()} - body: " . $resp->body());
+            throw new Exception("Firma falló, HTTP {$resp->status()}");
         }
 
-        $chFirm = curl_init('http://localhost:8113/firmardocumento/');
-        curl_setopt_array($chFirm, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $payloadJson,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'User-Agent: factura-electronica-client'
-            ],
-        ]);
+        $json = $resp->json();
 
-        $firmResp = curl_exec($chFirm);
-        $code     = curl_getinfo($chFirm, CURLINFO_HTTP_CODE);
-        curl_close($chFirm);
-
-        if ($firmResp === false || $code !== 200) {
-            throw new Exception("Firma falló, HTTP $code, respuesta: $firmResp");
+        // Si el firmador devuelve ['body' => 'jwt_string'], extraer el body
+        if (isset($json['body']) && is_string($json['body'])) {
+            return $json['body'];
         }
 
-        $firmData = json_decode($firmResp, true);
-        if (!isset($firmData['body']) || !is_string($firmData['body'])) {
-            throw new Exception('No se recibió firmaElectronica válida. Respuesta firma: ' . print_r($firmData, true));
+        // Si devuelve directamente el JWT
+        if (is_string($json)) {
+            return $json;
         }
 
-        return $firmData['body'];
-    }
-
-    /**
-     * Envía el DTE firmado a Hacienda
-     *
-     * @param string $envioPayload Payload del DTE a enviar
-     * @param string $token Token de autenticación
-     * @return array Respuesta de Hacienda
-     * @throws Exception
-     */
-    private function enviarDTE(string $envioPayload, string $token): array
-    {
-        $chSend = curl_init(rtrim($this->haciendaUrl, '/') . '/fesv/recepciondte/');
-        curl_setopt_array($chSend, [
-            CURLOPT_POST           => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POSTFIELDS     => $envioPayload,
-            CURLOPT_HTTPHEADER     => [
-                'Authorization: Bearer ' . $token,
-                'User-Agent: factura-electronica-client',
-                'Content-Type: application/json',
-                'Accept: application/json',
-            ],
-        ]);
-
-        $sendResp = curl_exec($chSend);
-        $code     = curl_getinfo($chSend, CURLINFO_HTTP_CODE);
-        curl_close($chSend);
-
-        if ($sendResp === false) {
-            throw new Exception('Error CURL envío DTE (sendResp false).');
-        }
-        if ($code !== 200) {
-            $responseData = json_decode($sendResp, true);
-            $descEnvio = $responseData['descripcionMsg']
-                ?? $responseData['error']
-                ?? json_encode($responseData);
-            throw new Exception("Error en envío DTE ($code): $descEnvio");
-        }
-
-        return json_decode($sendResp, true);
+        // Fallback
+        throw new Exception('El firmador no devolvió un JWT válido: ' . json_encode($json));
     }
 }

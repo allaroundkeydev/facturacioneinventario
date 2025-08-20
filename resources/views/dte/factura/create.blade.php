@@ -1,5 +1,4 @@
 <x-app-layout>
-  <!-- resources\views\dte\factura\create.blade.php -->
   <x-slot name="header">
     <h2 class="font-semibold text-xl text-gray-800 leading-tight">
       {{ __('Emitir Factura (DTE)') }}
@@ -7,15 +6,24 @@
   </x-slot>
 
   <div class="py-6">
-    <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+    <div class="max-w-5xl mx-auto sm:px-6 lg:px-8">
       <div class="bg-white p-6 rounded-2xl shadow">
-        <form action="{{ route('dte.store') }}" method="POST">
+
+        {{-- Mensajes --}}
+        @if(session('error'))
+          <div class="mb-4 p-3 bg-red-50 text-red-700 rounded">{{ session('error') }}</div>
+        @endif
+        @if(session('success'))
+          <div class="mb-4 p-3 bg-green-50 text-green-700 rounded">{{ session('success') }}</div>
+        @endif
+
+        <form action="{{ route('dte.store') }}" method="POST" id="dteForm">
           @csrf
 
-          <input type="hidden" name="tipo" value="{{ $tipo->codigo ?? old('tipo') }}">
+          <input type="hidden" name="tipo" value="{{ $tipo->codigo ?? old('tipo', '01') }}">
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- Campo principal: DUI/NIT -->
+            {{-- Cliente (DUI/NIT) --}}
             <div>
               <label class="block text-sm font-medium text-gray-700">Cliente (DUI / NIT)</label>
               <input type="text" name="cliente_numero" id="cliente_numero"
@@ -26,11 +34,11 @@
               <p id="cliente-status" class="text-xs text-gray-500 mt-1"></p>
             </div>
 
-            <!-- Sucursal -->
+            {{-- Sucursal --}}
             <div>
               <label class="block text-sm font-medium text-gray-700">Sucursal</label>
               <select name="sucursal_id" id="sucursal_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring">
-                <option value="">(Ninguna)</option>
+                <option value="">{{ __('(Ninguna)') }}</option>
                 @foreach($sucursales as $s)
                   <option value="{{ $s->id }}" {{ old('sucursal_id') == $s->id ? 'selected' : '' }}>
                     {{ $s->descripcion }}
@@ -39,22 +47,22 @@
               </select>
             </div>
 
-            <!-- Caja -->
+            {{-- Caja --}}
             <div>
               <label class="block text-sm font-medium text-gray-700">Caja</label>
               <select name="caja_id" id="caja_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring">
-                <option value="">(Ninguna)</option>
+                <option value="">{{ __('(Ninguna)') }}</option>
                 @foreach($cajas as $c)
                   <option value="{{ $c->id }}" {{ old('caja_id') == $c->id ? 'selected' : '' }}>
-                    {{ $c->descripcion }} ({{ $c->codigo_mh }})
+                    {{ $c->descripcion }} ({{ $c->codigo_mh ?? '' }})
                   </option>
                 @endforeach
               </select>
             </div>
           </div>
 
+          {{-- VISIBLES (readonly) que se llenan al buscar cliente --}}
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <!-- Campos visibles (readonly) que muestran información del cliente -->
             <div>
               <label class="block text-sm font-medium text-gray-700">Nombre / Razón social</label>
               <input type="text" id="cliente_nombre_view" readonly
@@ -86,7 +94,7 @@
             </div>
           </div>
 
-          <!-- Hidden inputs que SI se enviarán al POST (copiamos los valores ahí) -->
+          {{-- Hidden inputs que SI se enviarán al POST (estructura esperada por controller) --}}
           <input type="hidden" name="receptor[tipoDocumento]" id="receptor_tipoDocumento" value="{{ old('receptor.tipoDocumento') }}" />
           <input type="hidden" name="receptor[numDocumento]" id="receptor_numDocumento" value="{{ old('receptor.numDocumento', old('cliente_numero')) }}" />
           <input type="hidden" name="receptor[nrc]" id="receptor_nrc" value="{{ old('receptor.nrc') }}" />
@@ -99,39 +107,61 @@
           <input type="hidden" name="receptor[telefono]" id="receptor_telefono" value="{{ old('receptor.telefono') }}" />
           <input type="hidden" name="receptor[correo]" id="receptor_correo" value="{{ old('receptor.correo') }}" />
 
-          <div class="mt-4">
-            <label class="block text-sm font-medium text-gray-700">IVA %</label>
-            <input type="number" step="0.01" name="iva" value="{{ old('iva', 13) }}"
-                   class="mt-1 block w-32 border-gray-300 rounded-md shadow-sm focus:ring" />
+          {{-- IVA y totales visibles --}}
+          <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">IVA (%)</label>
+              <input type="number" step="0.01" name="iva" id="ivaPct" value="{{ old('iva', 13) }}"
+                     class="mt-1 block w-32 border-gray-300 rounded-md shadow-sm focus:ring" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Subtotal (Base)</label>
+              <input type="text" id="subtotal_view" readonly class="mt-1 block w-40 border-gray-200 bg-gray-50 rounded-md shadow-sm text-right" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">IVA monto</label>
+              <input type="text" id="iva_monto_view" readonly class="mt-1 block w-40 border-gray-200 bg-gray-50 rounded-md shadow-sm text-right" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Total</label>
+              <input type="text" id="total_view" readonly class="mt-1 block w-40 border-gray-200 bg-gray-50 rounded-md shadow-sm text-right" />
+            </div>
           </div>
 
           <hr class="my-4">
 
-          <!-- Ítems -->
+          {{-- Ítems: tabla dinámica --}}
           <div>
             <h3 class="font-semibold mb-2">Ítems</h3>
-
             <table class="w-full table-auto border-collapse">
               <thead>
                 <tr>
+                  <th class="border px-2 py-1 text-left">Código</th>
                   <th class="border px-2 py-1 text-left">Descripción</th>
                   <th class="border px-2 py-1 text-right">Cantidad</th>
-                  <th class="border px-2 py-1 text-right">Precio</th>
+                  <th class="border px-2 py-1 text-right">Precio (con IVA)</th>
                   <th class="border px-2 py-1">Acción</th>
                 </tr>
               </thead>
               <tbody id="items-body">
+                {{-- Si hubo old inputs, reconstruimos --}}
                 @if(old('items'))
                   @foreach(old('items') as $i => $it)
                     <tr>
                       <td class="border px-2 py-1">
-                        <input name="items[{{ $i }}][descripcion]" value="{{ $it['descripcion'] }}" class="w-full" />
+                        <input name="items[{{ $i }}][codigo]" value="{{ $it['codigo'] ?? '' }}" class="w-full" />
                       </td>
                       <td class="border px-2 py-1">
-                        <input name="items[{{ $i }}][cantidad]" value="{{ $it['cantidad'] }}" class="w-20 text-right" />
+                        <input name="items[{{ $i }}][descripcion]" value="{{ $it['descripcion'] ?? '' }}" class="w-full" />
                       </td>
-                      <td class="border px-2 py-1">
-                        <input name="items[{{ $i }}][precio]" value="{{ $it['precio'] }}" class="w-28 text-right" />
+                      <td class="border px-2 py-1 text-right">
+                        <input name="items[{{ $i }}][cantidad]" value="{{ $it['cantidad'] ?? 1 }}" class="w-20 text-right cantidad-input" />
+                      </td>
+                      <td class="border px-2 py-1 text-right">
+                        <input name="items[{{ $i }}][precio]" value="{{ $it['precio'] ?? '0.00' }}" class="w-28 text-right precio-input" />
                       </td>
                       <td class="border px-2 py-1 text-center">
                         <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
@@ -141,13 +171,16 @@
                 @else
                   <tr>
                     <td class="border px-2 py-1">
+                      <input name="items[0][codigo]" class="w-full" />
+                    </td>
+                    <td class="border px-2 py-1">
                       <input name="items[0][descripcion]" class="w-full" />
                     </td>
-                    <td class="border px-2 py-1">
-                      <input name="items[0][cantidad]" value="1" class="w-20 text-right" />
+                    <td class="border px-2 py-1 text-right">
+                      <input name="items[0][cantidad]" value="1" class="w-20 text-right cantidad-input" />
                     </td>
-                    <td class="border px-2 py-1">
-                      <input name="items[0][precio]" value="0.00" class="w-28 text-right" />
+                    <td class="border px-2 py-1 text-right">
+                      <input name="items[0][precio]" value="0.00" class="w-28 text-right precio-input" />
                     </td>
                     <td class="border px-2 py-1 text-center">
                       <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
@@ -163,7 +196,7 @@
           </div>
 
           <div class="mt-6 flex justify-end">
-            <button type="submit" class="px-6 py-2 bg-blue-600 text-gray-400 rounded-xl shadow hover:bg-blue-700">
+            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700">
               Generar DTE (preparar)
             </button>
           </div>
@@ -172,21 +205,57 @@
     </div>
   </div>
 
+  {{-- Modal para registrar cliente (opcional) --}}
+  <div class="fixed z-10 inset-0 overflow-y-auto hidden" id="clienteModal" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+      <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:align-middle sm:max-w-lg sm:w-full">
+        <div>
+          <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Registrar Cliente</h3>
+          <div class="mt-2">
+            <form id="clienteForm">
+              @csrf
+              <div class="grid grid-cols-1 gap-2">
+                <input type="text" id="m_nit" name="nit" placeholder="NIT" class="border rounded p-2" />
+                <input type="text" id="m_dui" name="dui" placeholder="DUI" class="border rounded p-2" />
+                <input type="text" id="m_nombre" name="nombre" placeholder="Nombre *" required class="border rounded p-2" />
+                <input type="email" id="m_correo" name="correo" placeholder="Correo" class="border rounded p-2" />
+                {{-- CAMBIO: direccion -> complemento --}}
+                <textarea id="m_complemento" name="complemento" placeholder="Complemento / Dirección" class="border rounded p-2"></textarea>
+                <input type="text" id="m_telefono" name="telefono" placeholder="Teléfono" class="border rounded p-2" />
+              </div>
+              <div class="mt-3 flex justify-end">
+                <button type="button" id="clienteCancel" class="px-3 py-1 bg-gray-200 rounded">Cancelar</button>
+                <button type="submit" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   @push('scripts')
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      // ---------- Items add/remove/reindex ----------
-      const addBtn = document.getElementById('add-item');
-      const tbody  = document.getElementById('items-body');
+      // ---------- helpers ----------
+      const qs = (s, root=document) => root.querySelector(s);
+      const qsa = (s, root=document) => Array.from(root.querySelectorAll(s));
+
+      // ---------- items add/remove/reindex ----------
+      const addBtn = qs('#add-item');
+      const tbody  = qs('#items-body');
 
       function reindex() {
-        Array.from(tbody.querySelectorAll('tr')).forEach((tr, idx) => {
+        qsa('#items-body tr').forEach((tr, idx) => {
           tr.querySelectorAll('input').forEach((inp) => {
             const name = inp.getAttribute('name') || '';
             const newName = name.replace(/items\[\d+\]/, `items[${idx}]`);
             inp.setAttribute('name', newName);
           });
         });
+        // recalc totals whenever index changes
+        calcTotals();
       }
 
       addBtn.addEventListener('click', () => {
@@ -194,13 +263,16 @@
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td class="border px-2 py-1">
+            <input name="items[${idx}][codigo]" class="w-full" />
+          </td>
+          <td class="border px-2 py-1">
             <input name="items[${idx}][descripcion]" class="w-full" />
           </td>
-          <td class="border px-2 py-1">
-            <input name="items[${idx}][cantidad]" value="1" class="w-20 text-right" />
+          <td class="border px-2 py-1 text-right">
+            <input name="items[${idx}][cantidad]" value="1" class="w-20 text-right cantidad-input" />
           </td>
-          <td class="border px-2 py-1">
-            <input name="items[${idx}][precio]" value="0.00" class="w-28 text-right" />
+          <td class="border px-2 py-1 text-right">
+            <input name="items[${idx}][precio]" value="0.00" class="w-28 text-right precio-input" />
           </td>
           <td class="border px-2 py-1 text-center">
             <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
@@ -218,31 +290,70 @@
         }
       });
 
+      // recalcular totales cuando cambian cantidad/precio/iva
+      function elementValues() {
+        const rows = qsa('#items-body tr');
+        return rows.map(tr => {
+          const qty = parseFloat(tr.querySelector('.cantidad-input')?.value || 0);
+          const price = parseFloat(tr.querySelector('.precio-input')?.value || 0);
+          return { qty, price };
+        });
+      }
+
+      function calcTotals() {
+        const ivaPct = parseFloat(qs('#ivaPct').value || 0);
+        let subtotal = 0;
+        let ivaMonto = 0;
+        const vals = elementValues();
+        vals.forEach(v => {
+          // price is WITH IVA
+          const priceNoIva = ivaPct > 0 ? v.price / (1 + ivaPct/100) : v.price;
+          const lineaBase = priceNoIva * v.qty;
+          const lineaIva = (v.price - priceNoIva) * v.qty;
+          subtotal += lineaBase;
+          ivaMonto += lineaIva;
+        });
+        const total = subtotal + ivaMonto;
+        qs('#subtotal_view').value = subtotal.toFixed(2);
+        qs('#iva_monto_view').value = ivaMonto.toFixed(2);
+        qs('#total_view').value = total.toFixed(2);
+      }
+
+      // Delegación para inputs de cantidad/precio (funciona para filas dinámicas)
+      tbody.addEventListener('input', (e) => {
+        if (e.target.matches('.cantidad-input') || e.target.matches('.precio-input')) {
+          calcTotals();
+        }
+      });
+      qs('#ivaPct').addEventListener('input', calcTotals);
+
+      // Inicializar totales al cargar
+      calcTotals();
+
       // ---------- Autocompletar cliente ----------
-      const inputDoc = document.getElementById('cliente_numero');
-      const statusEl = document.getElementById('cliente-status');
+      const inputDoc = qs('#cliente_numero');
+      const statusEl = qs('#cliente-status');
 
       // visibles
-      const vNombre = document.getElementById('cliente_nombre_view');
-      const vCorreo = document.getElementById('cliente_correo_view');
-      const vDireccion = document.getElementById('cliente_direccion_view');
-      const vTelefono = document.getElementById('cliente_telefono_view');
-      const vDepMun = document.getElementById('cliente_depmun_view');
+      const vNombre = qs('#cliente_nombre_view');
+      const vCorreo = qs('#cliente_correo_view');
+      const vDireccion = qs('#cliente_direccion_view'); // mostrará "complemento"
+      const vTelefono = qs('#cliente_telefono_view');
+      const vDepMun = qs('#cliente_depmun_view');
 
       // hidden (para enviar)
-      const hTipo = document.getElementById('receptor_tipoDocumento');
-      const hNum  = document.getElementById('receptor_numDocumento');
-      const hNrc  = document.getElementById('receptor_nrc');
-      const hNombre = document.getElementById('receptor_nombre');
-      const hCodAct = document.getElementById('receptor_codActividad');
-      const hDescAct = document.getElementById('receptor_descActividad');
-      const hDep = document.getElementById('receptor_direccion_departamento');
-      const hMun = document.getElementById('receptor_direccion_municipio');
-      const hComp = document.getElementById('receptor_direccion_complemento');
-      const hTel = document.getElementById('receptor_telefono');
-      const hCorreo = document.getElementById('receptor_correo');
+      const hTipo = qs('#receptor_tipoDocumento');
+      const hNum  = qs('#receptor_numDocumento');
+      const hNrc  = qs('#receptor_nrc');
+      const hNombre = qs('#receptor_nombre');
+      const hCodAct = qs('#receptor_codActividad');
+      const hDescAct = qs('#receptor_descActividad');
+      const hDep = qs('#receptor_direccion_departamento');
+      const hMun = qs('#receptor_direccion_municipio');
+      const hComp = qs('#receptor_direccion_complemento');
+      const hTel = qs('#receptor_telefono');
+      const hCorreo = qs('#receptor_correo');
 
-      // URL base: ajusta si tu ruta es diferente
       const buscarBase = "{{ route('clientes.buscar', ['doc' => 'DOC_PLACEHOLDER']) }}";
 
       async function buscarYCompletar(doc) {
@@ -259,16 +370,17 @@
             const json = await res.json();
             if (json.found && json.cliente) {
               const d = json.cliente;
+
               // visibles
               vNombre.value = d.nombre ?? '';
               vCorreo.value = d.correo ?? '';
-              vDireccion.value = d.direccion ?? '';
+              // CAMBIO: mostramos/completamos desde 'complemento' (fallback a 'direccion')
+              vDireccion.value = (d.complemento ?? d.direccion ?? '');
               vTelefono.value = d.telefono ?? '';
               vDepMun.value = ((d.departamento ?? '') + ' / ' + (d.municipio ?? '')).trim();
 
-              // hidden - populate ALL fields correctly according to MH requirements
+              // hidden - populate exactos para el JSON del DTE
               hNum.value = d.nit ?? d.dui ?? doc;
-              // Set tipoDocumento based on whether we have NIT or DUI (02 for NIT, 13 for DUI)
               hTipo.value = d.nit ? '02' : (d.dui ? '13' : '13');
               hNrc.value = d.nrc ?? '';
               hNombre.value = d.nombre ?? '';
@@ -276,20 +388,20 @@
               hDescAct.value = d.desc_actividad ?? '';
               hDep.value = d.departamento ?? '';
               hMun.value = d.municipio ?? '';
-              hComp.value = d.direccion ?? '';
+              hComp.value = (d.complemento ?? d.direccion ?? '');
               hTel.value = d.telefono ?? '';
               hCorreo.value = d.correo ?? '';
 
               statusEl.textContent = 'Cliente encontrado.';
             } else {
               clearCliente();
-              statusEl.textContent = 'Cliente no encontrado. Complete los datos manualmente.';
-              enableManualEditing();
+              statusEl.textContent = 'Cliente no encontrado. Puede registrarlo o completar los datos.';
+              openClienteModalWithNumber(doc);
             }
           } else if (res.status === 404) {
             clearCliente();
-            statusEl.textContent = 'Cliente no encontrado. Complete los datos manualmente.';
-            enableManualEditing();
+            statusEl.textContent = 'Cliente no encontrado. Puede registrarlo o completar los datos.';
+            openClienteModalWithNumber(doc);
           } else {
             clearCliente();
             statusEl.textContent = 'Error al buscar cliente.';
@@ -306,19 +418,16 @@
         hDep.value = hMun.value = hComp.value = hTel.value = hCorreo.value = '';
       }
 
-      function enableManualEditing() {
-        [vNombre, vCorreo, vDireccion, vTelefono].forEach(i => {
-          i.readOnly = false;
-          i.classList.remove('bg-gray-50');
-          i.classList.remove('border-gray-200');
-        });
+      function openClienteModalWithNumber(doc) {
+        qs('#m_dui').value = doc;
+        qs('#clienteModal').classList.remove('hidden');
       }
 
+      // eventos buscar al salir (blur) o Enter
       inputDoc.addEventListener('blur', () => {
         const val = inputDoc.value.trim();
         if (val.length >= 3) buscarYCompletar(val);
       });
-
       inputDoc.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -327,9 +436,37 @@
         }
       });
 
-      if (inputDoc.value.trim().length > 0) {
-        buscarYCompletar(inputDoc.value.trim());
-      }
+      // ---------- Modal: registrar cliente ----------
+      const clienteModal = qs('#clienteModal');
+      qs('#clienteCancel').addEventListener('click', () => clienteModal.classList.add('hidden'));
+
+      qs('#clienteForm').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const form = ev.target;
+        const data = new FormData(form);
+        data.append('_token', '{{ csrf_token() }}');
+
+        try {
+          const res = await fetch("{{ route('clientes.store') }}", {
+            method: 'POST',
+            body: data,
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(()=>({error:'error'}));
+            alert(err.error || 'Error creando cliente');
+            return;
+          }
+          const json = await res.json();
+          clienteModal.classList.add('hidden');
+          inputDoc.value = json.nit ?? json.dui ?? inputDoc.value;
+          buscarYCompletar(inputDoc.value);
+        } catch (e) {
+          console.error(e);
+          alert('Error al crear cliente');
+        }
+      });
 
     }); // DOMContentLoaded
   </script>

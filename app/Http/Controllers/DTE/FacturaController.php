@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
 use App\Models\TipoDocumento;
 use App\Models\Cliente;
 use App\Models\Sucursal;
@@ -26,7 +27,7 @@ class FacturaController extends Controller
         if (! $empresa) {
             return redirect()->route('empresa.create')->with('error', 'Debe registrar su empresa primero.');
         }
-        
+
         // tipo (código MH) pasado como query param ?tipo=01
         $tipoCodigo = $request->query('tipo');
         $tipo = $tipoCodigo ? TipoDocumento::where('codigo', $tipoCodigo)->first() : null;
@@ -62,7 +63,6 @@ class FacturaController extends Controller
             'iva' => ['nullable', 'numeric'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.descripcion' => ['required', 'string'],
-            // CORRECCIÓN: separar 'numeric' y 'min' en elementos distintos
             'items.*.cantidad' => ['required', 'numeric', 'min:0.01'],
             'items.*.precio' => ['required', 'numeric', 'min:0'],
             // Campos del receptor (hidden inputs del formulario)
@@ -79,32 +79,106 @@ class FacturaController extends Controller
             'receptor.correo' => ['nullable', 'string'],
         ]);
 
-        // Buscar cliente por DUI/NIT
+        // Evitar faltas si receptor no existe en validated
+        $validatedReceptor = $validated['receptor'] ?? [];
+
+        // Buscar cliente por DUI/NIT (si existe)
         $cliente = Cliente::where('nit', $validated['cliente_numero'])
                     ->orWhere('dui', $validated['cliente_numero'])
                     ->first();
 
         // Construir estructura DTE usando DteBuilder
         $builder = new DteBuilder();
+
+        // 1) EMISOR: setear desde la empresa y asegurar códigos MH por defecto
         $builder->setEmisor($empresa);
-        
-        if ($cliente) {
-            $builder->setReceptor($cliente, $validated['cliente_numero']);
+
+        // Asegurar codEstableMH y codPuntoVentaMH (valores requeridos por validate())
+        $codEstableMH = $empresa->cod_estable_mh ?? $empresa->codEstableMH ?? 'M001';
+        $codPuntoVentaMH = $empresa->cod_punto_venta_mh ?? $empresa->codPuntoVentaMH ?? 'P001';
+
+        // Re-aplicar defaults mínimos para el emisor
+        $builder->setEmisor([
+            'codEstableMH'     => (string) $codEstableMH,
+            'codPuntoVentaMH'  => (string) $codPuntoVentaMH,
+            'nit'              => $empresa->api_user ?? $empresa->nit,
+            'nombre'           => $empresa->razon_social ?? ($empresa->nombre_comercial ?? 'EMISOR'),
+            'descActividad'    => (string) ($empresa->desc_actividad ?? '')
+        ]);
+
+        // 2) RECEPTOR: tomamos los valores directamente de la tabla clientes si existe,
+        //    sino usamos los valores proporcionados por el formulario (validatedReceptor)
+        $numDocumento = $validated['cliente_numero'];
+
+        // Determinar tipo documento (si proviene del formulario prefierelo;
+        // si no, tomar tipo_documento de la tabla clientes o inferir por longitud)
+        if (!empty($validatedReceptor['tipoDocumento'])) {
+            $receptorTipo = $validatedReceptor['tipoDocumento'];
+        } elseif ($cliente && !empty($cliente->tipo_documento)) {
+            $receptorTipo = $cliente->tipo_documento;
         } else {
-            // Si no se encuentra cliente, usar los datos del formulario
-            $builder->setReceptor((object)[
-                'nrc' => $validated['receptor']['nrc'] ?? null,
-                'nombre' => $validated['receptor']['nombre'] ?? null,
-                'municipio' => $validated['receptor']['direccion']['municipio'] ?? null,
-                'departamento' => $validated['receptor']['direccion']['departamento'] ?? null,
-                'direccion' => $validated['receptor']['direccion']['complemento'] ?? null,
-                'telefono' => $validated['receptor']['telefono'] ?? null,
-                'correo' => $validated['receptor']['correo'] ?? null,
-                'cod_actividad' => $validated['receptor']['codActividad'] ?? null,
-                'desc_actividad' => $validated['receptor']['descActividad'] ?? null,
-            ], $validated['cliente_numero']);
+            // Inferir: NIT suele tener más de 9 dígitos (ajusta según tu lógica)
+            $digits = preg_replace('/\D/', '', (string)$numDocumento);
+            $receptorTipo = (strlen($digits) > 9) ? '02' : '13';
         }
-        
+
+        // Si es DUI (13) intentamos formatearlo con el guion
+        if ($receptorTipo === '13') {
+            $digits = preg_replace('/\D+/', '', (string)$numDocumento);
+            if (strlen($digits) === 9) {
+                $numDocumento = substr($digits, 0, 8) . '-' . substr($digits, 8, 1);
+            }
+        }
+
+        // Nombre del receptor: priorizar la columna nombre de clientes si existe,
+        // luego el campo del formulario, sino un fallback seguro.
+        $receptorNombre = $cliente?->nombre ?? ($validatedReceptor['nombre'] ?? null);
+        if (empty($receptorNombre)) {
+            $receptorNombre = ($receptorTipo === '13') ? 'CONSUMIDOR FINAL' : 'CLIENTE';
+        }
+
+        // --- Aquí: tomar municipio/departamento/complemento DIRECTAMENTE de la tabla clientes ---
+        if ($cliente) {
+            // Use cliente.departamento, cliente.municipio, cliente.complemento 
+            $dirDepartamento = $cliente->departamento !== null ? (string)$cliente->departamento : null;
+            $dirMunicipio    = $cliente->municipio !== null ? (string)$cliente->municipio : null;
+            // En la tabla 'clientes' la columna 'direccion' es texto; la usamos como 'complemento'
+            $dirComplemento  = $cliente->complemento !== null ? (string)$cliente->complemento : null;
+        } else {
+            // Fallback: usar lo enviado por el formulario
+            $dirDepartamento = $validatedReceptor['direccion']['departamento'] ?? null;
+            $dirMunicipio    = $validatedReceptor['direccion']['municipio'] ?? null;
+            $dirComplemento  = $validatedReceptor['direccion']['complemento'] ?? null;
+        }
+
+        // Construir payload del receptor (dirección tomada directamente de la tabla clientes)
+        $receptorPayload = [
+            'tipoDocumento' => $receptorTipo,
+            'numDocumento'  => $numDocumento,
+            'nrc'           => $cliente?->nrc ?? ($validatedReceptor['nrc'] ?? null),
+            'nombre'        => $receptorNombre,
+            'codActividad'  => $cliente?->cod_actividad ?? ($validatedReceptor['codActividad'] ?? null),
+            'descActividad' => $cliente?->desc_actividad ?? ($validatedReceptor['descActividad'] ?? null),
+            'direccion' => [
+                // AQUÍ tomamos **directamente** lo de la tabla clientes (o fallback de formulario)
+                'departamento' => $dirDepartamento,
+                'municipio'    => $dirMunicipio,
+                'complemento'  => $dirComplemento,
+            ],
+            'telefono' => $cliente?->telefono ?? ($validatedReceptor['telefono'] ?? null),
+            'correo'   => $cliente?->correo ?? ($validatedReceptor['correo'] ?? null),
+        ];
+
+        // Log resumido para depuración (puedes quitar luego)
+        Log::info('DTE -> receptorPayload (directo desde clientes o fallback):', [
+            'cliente_id' => $cliente?->id ?? null,
+            'receptorPayload' => $receptorPayload,
+        ]);
+
+        // Setear receptor en el builder
+        $builder->setReceptor($receptorPayload, $numDocumento);
+
+        // 3) Ítems: preparar y setear
         $items = [];
         foreach ($validated['items'] as $item) {
             $items[] = [
@@ -113,29 +187,65 @@ class FacturaController extends Controller
                 'precio' => $item['precio'],
             ];
         }
-        
-        $builder->setItems($items, $validated['iva'] ?? 0);
-        $jsonDte = $builder->build();
-        
-        // Actualizar tipoDte y numeroControl
-        $jsonDte['identificacion']['tipoDte'] = $validated['tipo'];
-        $jsonDte['identificacion']['numeroControl'] = 'DTE-' . $validated['tipo'] . '-' .
-                         ($empresa->cod_estable_mh ?? '0001') .
-                         ($empresa->cod_punto_venta_mh ?? '0001') . '-' .
+        $ivaPct = floatval($validated['iva'] ?? 0);
+        $builder->setItems($items, $ivaPct);
+
+        // 4) Identificación: tipoDte, numeroControl, codigoGeneracion y ambiente
+        $tipoPad = str_pad(ltrim($validated['tipo'], '0'), 2, '0', STR_PAD_LEFT);
+        $numeroControl = 'DTE-' . $tipoPad . '-' .
+                         ($codEstableMH ?? 'M001') .
+                         ($codPuntoVentaMH ?? 'P001') . '-' .
                          str_pad(rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
 
-        // Generar código de generación
         $codigoGeneracion = DteHelper::uuidV4();
-        $jsonDte['identificacion']['codigoGeneracion'] = $codigoGeneracion;
+
+        $builder->setIdentificacion([
+            'tipoDte' => $tipoPad,
+            'numeroControl' => $numeroControl,
+            'codigoGeneracion' => $codigoGeneracion,
+            // dejamos ambiente por defecto (ej. "00") a menos que quieras otra cosa
+            'ambiente' => $builder->build()['identificacion']['ambiente'] ?? '00',
+        ]);
+
+        // DEBUG log resumido
+        Log::info('Preparando DTE - resumen', [
+            'usuario_id' => auth()->id(),
+            'empresa_id' => $empresa->id ?? null,
+            'tipoDte' => $tipoPad,
+            'numeroControl' => $numeroControl,
+            'codigoGeneracion' => $codigoGeneracion,
+            'items_count' => count($items),
+            'receptor_tipo' => $receptorPayload['tipoDocumento'],
+            'receptor_nombre' => $receptorPayload['nombre'],
+            'emisor_codEstableMH' => $codEstableMH,
+            'emisor_codPuntoVentaMH' => $codPuntoVentaMH,
+        ]);
+
+        // Validar antes de construir JSON final
+        $validation = $builder->validate();
+        if ($validation !== true) {
+            $msg = 'DTE inválido. Campos faltantes o inconsistentes: ' . implode(', ', $validation);
+            Log::warning('DTE inválido antes de guardar', ['errors' => $validation, 'payload' => $receptorPayload]);
+            return redirect()->back()->withInput()->with('error', $msg);
+        }
+
+        // Construir el array final del DTE
+        $jsonDte = $builder->build();
 
         // Guardar DTE en la tabla dtes (estado pendiente)
-        $dte = Dte::create([
-            'usuario_id' => auth()->id(),
-            'dte_json' => $jsonDte,
-            'respuesta_json' => null,
-            'codigo_generacion' => $codigoGeneracion,
-            'estado' => 'PENDIENTE',
-        ]);
+        try {
+            $dte = Dte::create([
+                'usuario_id' => auth()->id(),
+                'dte_json' => $jsonDte, // Dte model tiene $casts para array
+                'respuesta_json' => null,
+                'codigo_generacion' => $codigoGeneracion,
+                'estado' => 'PENDIENTE',
+            ]);
+            Log::info("DTE guardado id={$dte->id} usuario_id=" . auth()->id());
+        } catch (\Throwable $e) {
+            Log::error('Error creando DTE: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return redirect()->back()->withInput()->with('error', 'Error interno al guardar DTE. Revisa logs.');
+        }
 
         return redirect()->route('dte.index')->with('success', 'DTE creado (pendiente firma/envío).');
     }

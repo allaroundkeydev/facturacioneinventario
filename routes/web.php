@@ -72,18 +72,26 @@ Route::post('/dte', [\App\Http\Controllers\DTE\FacturaController::class, 'store'
      ->middleware(['auth','verified']);
 
 
-// Ruta para buscar cliente por DUI/NIT (GET) — devuelve JSON
-Route::get('/clientes/buscar/{doc}', [\App\Http\Controllers\DTE\ClienteController::class, 'buscarPorDocumento'])
-     ->name('clientes.buscar')
-     ->middleware(['auth','verified']);
+// Ruta para buscar cliente por DUI/NIT (GET) usando query param ?doc=...
+    // Ejemplo: /clientes/buscar?doc=04319321-6
+    Route::get('/clientes/buscar', [\App\Http\Controllers\DTE\ClienteController::class, 'buscar'])
+         ->name('clientes.buscar')
+         ->middleware(['auth','verified']);
+
+          // Ruta para crear cliente vía AJAX/form normal (POST).
+    // Si la petición es AJAX/JSON, el controlador responde JSON (201 + cliente creado).
+    Route::post('/clientes', [\App\Http\Controllers\DTE\ClienteController::class, 'store'])
+         ->name('clientes.store')
+         ->middleware(['auth','verified']);
+
 
 // Rutas para enviar DTEs
-Route::post('/dte/enviar/{dte}', [\App\Http\Controllers\DTE\EnviarDteController::class, 'enviar'])
-     ->name('dte.enviar')
-     ->middleware(['auth','verified']);
-Route::post('/dte/enviar-pendientes', [\App\Http\Controllers\DTE\EnviarDteController::class, 'enviarPendientes'])
-     ->name('dte.enviar-pendientes')
-     ->middleware(['auth','verified']);
+    Route::post('/dte/enviar/{dte}', [\App\Http\Controllers\DTE\EnviarDteController::class, 'enviar'])
+         ->name('dte.enviar')
+         ->middleware(['auth','verified']);
+    Route::post('/dte/enviar-pendientes', [\App\Http\Controllers\DTE\EnviarDteController::class, 'enviarPendientes'])
+         ->name('dte.enviar-pendientes')
+         ->middleware(['auth','verified']);
 
 
     // ————————————————————————————————————————————————————————————————————————

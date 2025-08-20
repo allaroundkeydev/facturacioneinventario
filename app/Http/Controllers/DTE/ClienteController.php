@@ -40,11 +40,29 @@ class ClienteController extends Controller
 
     /**
      * Almacena el cliente nuevo.
+     * Si la petición es AJAX / espera JSON, devuelve JSON con el cliente creado (201).
+     * Si es petición web normal, redirige a la lista.
      */
-    public function store(ClienteRequest $request): RedirectResponse
+    public function store(ClienteRequest $request)
     {
-        Cliente::create($request->validated());
+        // Los datos validados
+        $data = $request->validated();
 
+        $cliente = Cliente::create($data);
+
+        // Si se espera JSON (AJAX/front fetch), devolver el cliente creado con 201
+        if ($request->wantsJson() || $request->ajax() || $request->header('Accept') === 'application/json') {
+            // Seleccionar solo campos seguros/útiles para el frontend
+            $out = $cliente->only([
+                'id',
+                'nit', 'dui', 'nombre', 'correo', 'complemento', 'telefono',
+                'tipo_documento', 'departamento', 'municipio', 'nrc',
+                'cod_actividad', 'desc_actividad'
+            ]);
+            return response()->json($out, 201);
+        }
+
+        // Petición normal: redirigir
         return redirect()
             ->route('clientes.index')
             ->with('success', 'Cliente creado correctamente.');
@@ -86,11 +104,16 @@ class ClienteController extends Controller
             ->with('success', 'Cliente eliminado correctamente.');
     }
 
-
-
+    /**
+     * Buscar cliente por query param 'doc' (DUI o NIT).
+     * Responde JSON con la forma:
+     *  - 200 => { found: true, cliente: { ... } }
+     *  - 404 => { found: false } (o 404 status)
+     *  - 400 => { found: false, message: 'No se indicó documento' }
+     */
     public function buscar(Request $request): JsonResponse
     {
-        $doc = trim($request->query('doc', ''));
+        $doc = trim((string) $request->query('doc', ''));
 
         if ($doc === '') {
             return response()->json(['found' => false, 'message' => 'No se indicó documento'], 400);
@@ -106,34 +129,12 @@ class ClienteController extends Controller
 
         // Seleccionamos solo los campos que necesitamos en el formulario
         $data = $cliente->only([
-            'id','nit','dui','nombre','correo','direccion','telefono',
-            'tipo_documento','departamento','municipio'
-        ]);
-
-        return response()->json(['found' => true, 'data' => $data]);
-    }
-
-    public function buscarPorDocumento(string $doc): JsonResponse
-    {
-        $doc = trim($doc);
-
-        // Busca por NIT o DUI exacto
-        $cliente = Cliente::where('nit', $doc)
-                    ->orWhere('dui', $doc)
-                    ->first();
-
-        if (! $cliente) {
-            return response()->json(['found' => false], 404);
-        }
-
-        // Selecciona solo los campos necesarios para no sobreexponer la entidad
-        $data = $cliente->only([
             'id',
             'nit',
             'dui',
             'nombre',
             'correo',
-            'direccion',
+            'complemento',
             'telefono',
             'tipo_documento',
             'departamento',
@@ -143,13 +144,41 @@ class ClienteController extends Controller
             'desc_actividad'
         ]);
 
-        return response()->json([
-            'found'   => true,
-            'cliente' => $data
-        ], 200);
+        return response()->json(['found' => true, 'cliente' => $data], 200);
     }
 
+    /**
+     * Alternativa: búsqueda por ruta con parámetro (opcional)
+     * Si tienes una ruta como /clientes/buscar/{doc} puedes mapearla a este método.
+     */
+    public function buscarPorDocumento(string $doc): JsonResponse
+    {
+        $doc = trim($doc);
 
+        $cliente = Cliente::where('nit', $doc)
+                    ->orWhere('dui', $doc)
+                    ->first();
 
+        if (! $cliente) {
+            return response()->json(['found' => false], 404);
+        }
 
+        $data = $cliente->only([
+            'id',
+            'nit',
+            'dui',
+            'nombre',
+            'correo',
+            'complemento',
+            'telefono',
+            'tipo_documento',
+            'departamento',
+            'municipio',
+            'nrc',
+            'cod_actividad',
+            'desc_actividad'
+        ]);
+
+        return response()->json(['found' => true, 'cliente' => $data], 200);
+    }
 }
