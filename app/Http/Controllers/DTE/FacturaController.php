@@ -16,6 +16,7 @@ use App\Models\Dte;
 use App\Services\DteBuilder;
 use App\Helpers\DteHelper;
 
+
 class FacturaController extends Controller
 {
     /**
@@ -139,35 +140,54 @@ class FacturaController extends Controller
 
         // --- Aquí: tomar municipio/departamento/complemento DIRECTAMENTE de la tabla clientes ---
         if ($cliente) {
-            // Use cliente.departamento, cliente.municipio, cliente.complemento 
-            $dirDepartamento = $cliente->departamento !== null ? (string)$cliente->departamento : null;
-            $dirMunicipio    = $cliente->municipio !== null ? (string)$cliente->municipio : null;
-            // En la tabla 'clientes' la columna 'direccion' es texto; la usamos como 'complemento'
-            $dirComplemento  = $cliente->complemento !== null ? (string)$cliente->complemento : null;
-        } else {
-            // Fallback: usar lo enviado por el formulario
-            $dirDepartamento = $validatedReceptor['direccion']['departamento'] ?? null;
-            $dirMunicipio    = $validatedReceptor['direccion']['municipio'] ?? null;
-            $dirComplemento  = $validatedReceptor['direccion']['complemento'] ?? null;
-        }
+    // pasa un array limpio con toArray() para evitar problemas de cast
+    $builder->setReceptor($cliente->toArray(), $validated['cliente_numero']);
+} else {
+    // Si no existe cliente, se usa el bloque con los datos del formulario
+    $builder->setReceptor((object)[
+        'nrc' => $validated['receptor']['nrc'] ?? null,
+        'nombre' => $validated['receptor']['nombre'] ?? null,
+        'municipio' => $validated['receptor']['direccion']['municipio'] ?? null,
+        'departamento' => $validated['receptor']['direccion']['departamento'] ?? null,
+        'direccion' => $validated['receptor']['direccion']['complemento'] ?? null,
+        'telefono' => $validated['receptor']['telefono'] ?? null,
+        'correo' => $validated['receptor']['correo'] ?? null,
+        'cod_actividad' => $validated['receptor']['codActividad'] ?? null,
+        'desc_actividad' => $validated['receptor']['descActividad'] ?? null,
+    ], $validated['cliente_numero']);
+}
 
-        // Construir payload del receptor (dirección tomada directamente de la tabla clientes)
-        $receptorPayload = [
-            'tipoDocumento' => $receptorTipo,
-            'numDocumento'  => $numDocumento,
-            'nrc'           => $cliente?->nrc ?? ($validatedReceptor['nrc'] ?? null),
-            'nombre'        => $receptorNombre,
-            'codActividad'  => $cliente?->cod_actividad ?? ($validatedReceptor['codActividad'] ?? null),
-            'descActividad' => $cliente?->desc_actividad ?? ($validatedReceptor['descActividad'] ?? null),
-            'direccion' => [
-                // AQUÍ tomamos **directamente** lo de la tabla clientes (o fallback de formulario)
-                'departamento' => $dirDepartamento,
-                'municipio'    => $dirMunicipio,
-                'complemento'  => $dirComplemento,
-            ],
-            'telefono' => $cliente?->telefono ?? ($validatedReceptor['telefono'] ?? null),
-            'correo'   => $cliente?->correo ?? ($validatedReceptor['correo'] ?? null),
-        ];
+
+        // --- obtener receptor validado (si existe) ---
+$validatedReceptor = $validated['receptor'] ?? [];
+
+// Si $cliente existe (consulta previa), preferir sus campos.
+// Si no, usar lo enviado por formulario en receptor.direccion OR receptor.{departamento,municipio,complemento}
+$dirDepartamento = $cliente->departamento ?? ($validatedReceptor['direccion']['departamento'] ?? ($validatedReceptor['departamento'] ?? null));
+$dirMunicipio    = $cliente->municipio    ?? ($validatedReceptor['direccion']['municipio']    ?? ($validatedReceptor['municipio'] ?? null));
+$dirComplemento  = $cliente->complemento  ?? ($validatedReceptor['direccion']['complemento']  ?? ($validatedReceptor['complemento'] ?? null));
+
+// Normalizar strings vacíos a null (opcional, según schema)
+$dirDepartamento = $dirDepartamento === '' ? null : $dirDepartamento;
+$dirMunicipio    = $dirMunicipio === '' ? null : $dirMunicipio;
+$dirComplemento  = $dirComplemento === '' ? null : $dirComplemento;
+
+// Construir payload del receptor (usa los valores calculados)
+$receptorPayload = [
+    'tipoDocumento' => $receptorTipo,
+    'numDocumento'  => $numDocumento,
+    'nrc'           => $cliente->nrc ?? ($validatedReceptor['nrc'] ?? null),
+    'nombre'        => $receptorNombre,
+    'codActividad'  => $cliente->cod_actividad ?? ($validatedReceptor['codActividad'] ?? null),
+    'descActividad' => $cliente->desc_actividad ?? ($validatedReceptor['descActividad'] ?? null),
+    'direccion' => [
+        'departamento' => $dirDepartamento,
+        'municipio'    => $dirMunicipio,
+        'complemento'  => $dirComplemento,
+    ],
+    'telefono' => $cliente->telefono ?? ($validatedReceptor['telefono'] ?? null),
+    'correo'   => $cliente->correo ?? ($validatedReceptor['correo'] ?? null),
+];
 
         // Log resumido para depuración (puedes quitar luego)
         Log::info('DTE -> receptorPayload (directo desde clientes o fallback):', [

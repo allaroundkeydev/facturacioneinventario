@@ -127,53 +127,56 @@ class DteBuilder
      */
 public function setReceptor($receptor, ?string $numDocumento = null): self
 {
-    if (is_object($receptor)) $receptor = (array) $receptor;
-    
+    // Si es un Eloquent Model, conviértelo con toArray() (más fiable)
+    if ($receptor instanceof \Illuminate\Database\Eloquent\Model) {
+        $receptor = $receptor->toArray();
+    }
+
+    // Si es objeto stdClass, transformarlo a array
+    if (is_object($receptor)) {
+        $receptor = (array) $receptor;
+    }
+
     if (is_array($receptor)) {
-        $this->dte['receptor']['tipoDocumento'] = $receptor['tipoDocumento'] ?? $this->dte['receptor']['tipoDocumento'];
-        $this->dte['receptor']['numDocumento']  = $numDocumento ?? ($receptor['numDocumento'] ?? $this->dte['receptor']['numDocumento']);
-        $this->dte['receptor']['nrc']           = $receptor['nrc'] ?? $this->dte['receptor']['nrc'];
-        $this->dte['receptor']['nombre']        = $receptor['nombre'] ?? $this->dte['receptor']['nombre'];
+        // Normalizar nombres que pueden venir de distintos lugares
+        $nombre = $receptor['nombre'] 
+                  ?? $receptor['razon_social'] 
+                  ?? $receptor['nombre_comercial'] 
+                  ?? null;
 
-        // 🔹 CORRECCIÓN: Manejamos la dirección correctamente
-        $direccion = [];
-        
-        // Si viene directamente en el receptor
-        if (isset($receptor['departamento']) || isset($receptor['municipio']) || isset($receptor['complemento'])) {
-            $direccion = [
-                'departamento' => $receptor['departamento'] ?? $this->dte['receptor']['direccion']['departamento'],
-                'municipio'    => $receptor['municipio'] ?? $this->dte['receptor']['direccion']['municipio'],
-                'complemento'  => $receptor['complemento'] ?? $this->dte['receptor']['direccion']['complemento'],
-            ];
-        }
-        // Si viene en un sub-array 'direccion'
-        elseif (isset($receptor['direccion']) && is_array($receptor['direccion'])) {
-            $direccionData = $receptor['direccion'];
-            $direccion = [
-                'departamento' => $direccionData['departamento'] ?? $this->dte['receptor']['direccion']['departamento'],
-                'municipio'    => $direccionData['municipio'] ?? $this->dte['receptor']['direccion']['municipio'],
-                'complemento'  => $direccionData['complemento'] ?? $this->dte['receptor']['direccion']['complemento'],
-            ];
-        }
-        // Si no hay datos de dirección, mantener los valores por defecto
-        else {
-            $direccion = [
-                'departamento' => $this->dte['receptor']['direccion']['departamento'],
-                'municipio'    => $this->dte['receptor']['direccion']['municipio'],
-                'complemento'  => $this->dte['receptor']['direccion']['complemento'],
-            ];
-        }
-        
-        $this->dte['receptor']['direccion'] = $direccion;
+        $nrc = $receptor['nrc'] ?? null;
+        $cod_actividad = $receptor['cod_actividad'] ?? $receptor['codActividad'] ?? null;
+        $desc_actividad = $receptor['desc_actividad'] ?? $receptor['descActividad'] ?? null;
 
+        // Dirección: puede venir como campos planos o en sub-array 'direccion'
+        $departamento = $receptor['departamento'] 
+                        ?? ($receptor['direccion']['departamento'] ?? null) 
+                        ?? null;
+        $municipio = $receptor['municipio'] 
+                     ?? ($receptor['direccion']['municipio'] ?? null) 
+                     ?? null;
+        $complemento = $receptor['complemento'] 
+                       ?? ($receptor['direccion']['complemento'] ?? $receptor['direccion'] ?? null) 
+                       ?? null;
+
+        $this->dte['receptor']['tipoDocumento'] = $receptor['tipoDocumento'] ?? $receptor['tipo_documento'] ?? $this->dte['receptor']['tipoDocumento'];
+        $this->dte['receptor']['numDocumento']  = $numDocumento ?? ($receptor['numDocumento'] ?? $receptor['num_documento'] ?? $this->dte['receptor']['numDocumento']);
+        $this->dte['receptor']['nrc'] = null;
+        $this->dte['receptor']['nombre'] = $nombre ?? $this->dte['receptor']['nombre'];
+        $this->dte['receptor']['direccion'] = [
+            'departamento' => $departamento,
+            'municipio' => $municipio,
+            'complemento' => $complemento,
+        ];
         $this->dte['receptor']['telefono'] = $receptor['telefono'] ?? $this->dte['receptor']['telefono'];
         $this->dte['receptor']['correo']   = $receptor['correo'] ?? $this->dte['receptor']['correo'];
-        $this->dte['receptor']['codActividad'] = $receptor['cod_actividad'] ?? $this->dte['receptor']['codActividad'];
-        $this->dte['receptor']['descActividad'] = $receptor['desc_actividad'] ?? $this->dte['receptor']['descActividad'];
+        $this->dte['receptor']['codActividad'] = $cod_actividad ?? $this->dte['receptor']['codActividad'];
+        $this->dte['receptor']['descActividad'] = $desc_actividad ?? $this->dte['receptor']['descActividad'];
     }
-    
+
     return $this;
 }
+
 
     /**
      * Recibe items en formato simple: [{descripcion, cantidad, precio}, ...]
