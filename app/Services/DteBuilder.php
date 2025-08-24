@@ -13,7 +13,7 @@ class DteBuilder
         // estructura base con claves necesarias
         $this->dte = [
             'identificacion' => [
-                'version' => 1,
+                'version' => null,
                 // Por defecto dejamos "00" si quieres (según tu requisito)
                 'ambiente' => '00',
                 'tipoDte' => '01',
@@ -80,16 +80,35 @@ class DteBuilder
     }
 
     /**
-     * Forzar/ajustar identificacion (numeroControl, tipoDte, ambiente, version, tipoMoneda, etc.)
-     *
-     * @param array $data
-     * @return $this
-     */
-    public function setIdentificacion(array $data): self
-    {
-        $this->dte['identificacion'] = array_merge($this->dte['identificacion'], $data);
-        return $this;
+ * Forzar/ajustar identificacion (numeroControl, tipoDte, ambiente, version, tipoMoneda, etc.)
+ *
+ * @param array $data
+ * @return $this
+ */
+public function setIdentificacion(array $data): self
+{
+    // Merge conservador: primero merge para no perder campos ya configurados
+    $this->dte['identificacion'] = array_merge($this->dte['identificacion'], $data);
+
+    // Si se indicó tipoDte y es CCF (03) y no se especificó version, forzar version 3
+    $tipo = $this->dte['identificacion']['tipoDte'] ?? null;
+    if ($tipo === '03') {
+        $this->dte['identificacion']['version'] = 3;
+    } else {
+        // Si no es CCF y no existe version, dejarla en 1 por compatibilidad con facturas
+        if (empty($this->dte['identificacion']['version'])) {
+            $this->dte['identificacion']['version'] = 1;
+        }
     }
+
+    // Asegurar formato de tipoDte como string 2-digits
+    if (!empty($this->dte['identificacion']['tipoDte'])) {
+        $this->dte['identificacion']['tipoDte'] = str_pad((string)$this->dte['identificacion']['tipoDte'], 2, '0', STR_PAD_LEFT);
+    }
+
+    return $this;
+}
+
 
     /**
      * Setear emisor desde modelo Empresa o array

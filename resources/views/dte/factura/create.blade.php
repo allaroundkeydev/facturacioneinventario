@@ -17,7 +17,11 @@
           <div class="mb-4 p-3 bg-green-50 text-green-700 rounded">{{ session('success') }}</div>
         @endif
 
-        <form action="{{ route('dte.store') }}" method="POST" id="dteForm">
+        <form 
+    action="{{ $tipo && $tipo->codigo === '03' ? route('dte.ccf.store') : route('dte.store') }}" 
+    method="POST" 
+    id="dteForm"
+>
           @csrf
 
           <input type="hidden" name="tipo" value="{{ $tipo->codigo ?? old('tipo', '01') }}">

@@ -17,7 +17,14 @@ class DashboardController extends Controller
         return view('dte.select_tipo', compact('tipos'));
     }
 
-    public function handleTipo(Request $request)
+    /**
+     * Maneja la selección de tipo de DTE.
+     * Redirige a formulario específico para CCF (03) o al formulario genérico de creación.
+     *
+     * @param Request $request
+     * @return RedirectResponse
+     */
+    public function handleTipo(Request $request): RedirectResponse
     {
         // Validamos únicamente el campo enviado
         $data = $request->validate([
@@ -43,7 +50,12 @@ class DashboardController extends Controller
             return back()->withErrors(['tipo' => 'Seleccione un tipo de documento.'])->withInput();
         }
 
-        // Redirigimos a la ruta de creación pasando el código como query param
+        // Si es CCF (03) ir al formulario específico de CCF
+        if ($codigo === '03') {
+            return redirect()->route('dte.ccf.create', ['tipo' => $codigo]);
+        }
+
+        // En otros casos redirigimos a la creación genérica (puedes usar create que ya tengas)
         return redirect()->route('dte.create', ['tipo' => $codigo]);
     }
 

@@ -71,6 +71,21 @@ Route::post('/dte', [\App\Http\Controllers\DTE\FacturaController::class, 'store'
      ->name('dte.store')
      ->middleware(['auth','verified']);
 
+     // formulario específico CCF
+Route::get('/dte/ccf/create', [\App\Http\Controllers\DTE\FacturaController::class, 'createCcf'])
+    ->name('dte.ccf.create')
+    ->middleware(['auth','verified']);
+
+    // Formulario CCF (preparar / crear)
+Route::get('/dte/ccf/create', [\App\Http\Controllers\DTE\FacturaController::class, 'createCcf'])
+    ->name('dte.ccf.create')
+    ->middleware(['auth','verified']);
+
+// Guardar CCF (preparar DTE y guardar en BD)
+Route::post('/dte/ccf', [\App\Http\Controllers\DTE\FacturaController::class, 'storeCcf'])
+    ->name('dte.ccf.store')
+    ->middleware(['auth','verified']);
+
 
 // Ruta para buscar cliente por DUI/NIT (GET) usando query param ?doc=...
     // Ejemplo: /clientes/buscar?doc=04319321-6

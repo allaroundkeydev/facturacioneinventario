@@ -32,12 +32,43 @@
 
   @error('tipo')<p class="text-red-600 mt-2">{{ $message }}</p>@enderror
 
-  <div class="mt-6 flex justify-end">
-    <button type="submit"
-            class="px-6 py-2 bg-blue-600 text-gray-400 rounded-xl shadow hover:bg-blue-700">
-      Continuar
-    </button>
-  </div>
+  <!-- dentro de resources/views/dte/select_tipo.blade.php, al final del form (antes del submit) -->
+<div class="mt-4 flex items-center justify-between">
+  <a id="direct-link" href="{{ route('dte.create') }}" 
+     class="text-sm text-gray-500 underline hidden">Abrir formulario seleccionado</a>
+
+  <button type="submit"
+          class="px-6 py-2 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700">
+    Continuar
+  </button>
+</div>
+
+@push('scripts')
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const radios = document.querySelectorAll('input[name="tipo"]');
+    const link = document.getElementById('direct-link');
+
+    function updateLink() {
+      const sel = document.querySelector('input[name="tipo"]:checked');
+      if (!sel) {
+        link.classList.add('hidden'); return;
+      }
+      const tipo = sel.value;
+      // si es 03 (CCF) apunta directo al formulario CCF, si no al create genérico con query param
+      if (tipo === '03') {
+        link.href = '{{ route("dte.ccf.create") }}';
+      } else {
+        link.href = '{{ route("dte.create") }}' + '?tipo=' + encodeURIComponent(tipo);
+      }
+      link.classList.remove('hidden');
+    }
+
+    radios.forEach(r => r.addEventListener('change', updateLink));
+    updateLink();
+  });
+</script>
+@endpush
 </form>
 
       </div>

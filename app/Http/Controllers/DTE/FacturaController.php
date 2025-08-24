@@ -14,8 +14,11 @@ use App\Models\Caja;
 use App\Models\Producto;
 use App\Models\Dte;
 use App\Services\DteBuilder;
+use App\Services\CcfService;
 use App\Helpers\DteHelper;
-
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
+use Exception;
 
 class FacturaController extends Controller
 {
@@ -268,5 +271,68 @@ $receptorPayload = [
         }
 
         return redirect()->route('dte.index')->with('success', 'DTE creado (pendiente firma/envío).');
+    }
+
+    // --- Mostrar formulario CCF (reusa la vista factura/create que ya tienes)
+    // --- Mostrar formulario CCF (reusa la vista factura/create que ya tienes)
+// --- Mostrar formulario CCF (reusa la vista factura/create que ya tienes)
+    public function createCcf(Request $request)
+    {
+        $user = Auth::user();
+        $empresa = $user->empresa ?? null;
+
+        $sucursales = $empresa ? Sucursal::where('empresa_id', $empresa->id)->get() : collect();
+        // OJO: no buscar cajas por empresa_id directamente si tu modelo está por sucursal.
+        // mejor obtener cajas por sucursal list:
+        $cajas = collect();
+        if ($empresa) {
+            $sucursalesIds = $sucursales->pluck('id')->toArray();
+            if (!empty($sucursalesIds)) {
+                $cajas = \App\Models\Caja::whereIn('sucursal_id', $sucursalesIds)->get();
+            }
+        }
+
+        $tipo = TipoDocumento::where('codigo', '03')->first();
+
+        return view('dte.factura.create', compact('tipo', 'sucursales', 'cajas'));
+    }
+
+    // --- Guardar CCF: delegar en CcfService
+    public function storeCcf(Request $request)
+    {
+        $user = Auth::user();
+        $empresa = $user->empresa ?? null;
+        if (! $empresa) {
+            return back()->with('error', 'Empresa emisora no configurada para este usuario.');
+        }
+
+        // Reglas básicas (suficientes para crear el CCF)
+        $rules = [
+            'receptor.numDocumento' => ['required','string'],
+            'receptor.nombre' => ['nullable','string'],
+            'items' => ['required','array','min:1'],
+            'items.*.cantidad' => ['required','numeric','min:0.00000001'],
+            'items.*.precio' => ['required','numeric'],
+            'iva' => ['nullable','numeric'],
+        ];
+
+        $v = Validator::make($request->all(), $rules);
+        if ($v->fails()) {
+            return back()->withErrors($v)->withInput();
+        }
+
+        $input = $request->all();
+
+        // instanciar servicio CCF con la empresa actual
+        $ccfService = new \App\Services\CcfService($empresa);
+
+        try {
+            $dteModel = $ccfService->createFromArray($input, $user);
+        } catch (Exception $e) {
+            \Log::error('Error creando CCF: '.$e->getMessage());
+            return back()->withInput()->with('error', 'Error creando CCF: ' . $e->getMessage());
+        }
+
+        return redirect()->route('dte.index')->with('success', 'Comprobante CCF preparado correctamente (ID: '.$dteModel->id.').');
     }
 }
