@@ -1,8 +1,15 @@
 <?php
+//app\Services\DteBuilder.php
 namespace App\Services;
 
 use App\Models\Empresa;
 use Carbon\Carbon;
+
+protected float $globalDiscount = 0.0;
+protected array $pagos = [];
+
+protected function r6(float $v): float { return round($v, 6); }
+protected function r2(float $v): float { return round($v, 2); }
 
 class DteBuilder
 {
@@ -78,6 +85,30 @@ class DteBuilder
             'apendice' => null,
         ];
     }
+
+
+    public function setGlobalDiscount(float $amount): self
+{
+    $this->globalDiscount = max(0.0, $amount);
+    return $this;
+}
+
+public function setPagos(array $pagos): self
+{
+    // Normaliza al schema: 2 decimales en salida; nulls permitidos
+    $norm = [];
+    foreach ($pagos as $p) {
+        $norm[] = [
+            'codigo' => (string)$p['codigo'],
+            'montoPago' => $this->r2((float)$p['montoPago']),
+            'referencia' => $p['referencia'] ?? null,
+            'plazo' => $p['plazo'] ?? null,
+            'periodo' => $p['periodo'] ?? null,
+        ];
+    }
+    $this->pagos = $norm;
+    return $this;
+}
 
     /**
  * Forzar/ajustar identificacion (numeroControl, tipoDte, ambiente, version, tipoMoneda, etc.)
@@ -202,79 +233,51 @@ public function setReceptor($receptor, ?string $numDocumento = null): self
      * Los precios son asumidos con IVA incluido tal como hace tu ejemplo.
      */
     public function setItems(array $items, float $ivaPct = 0): self
-    {
-        $this->dte['cuerpoDocumento'] = [];
-        $subTotal = 0.0;
-        $totalIva = 0.0;
+{
+    $this->dte['cuerpoDocumento'] = [];
+    $subTotal = 0.0;
+    $totalIva = 0.0;
 
-        foreach ($items as $i => $it) {
-            $cantidad = isset($it['cantidad']) ? floatval($it['cantidad']) : 0.0;
-            $precioConIVA = isset($it['precio']) ? floatval($it['precio']) : 0.0;
+    foreach ($items as $i => $it) {
+        $cantidad = isset($it['cantidad']) ? floatval($it['cantidad']) : 0.0;
+        $precioConIVA = isset($it['precio']) ? floatval($it['precio']) : 0.0;
+        $descItem = isset($it['montoDescu']) ? floatval($it['montoDescu']) : 0.0;
 
-            $ventaGravada = round($precioConIVA * $cantidad, 2);
-            // ivaItem = (precioConIVA * cantidad) * ivaPct / (100 + ivaPct)
-            $ivaItem = $ivaPct > 0 ? round($ventaGravada * $ivaPct / (100 + $ivaPct), 2) : 0.00;
+        $priceNoIva = $ivaPct > 0 ? ($precioConIVA / (1 + $ivaPct/100)) : $precioConIVA;
+        $ventaBruta = $this->r6($priceNoIva * $cantidad);
+        $ventaNeta = max(0, $this->r6($ventaBruta - $descItem));
 
-            $subTotal += $ventaGravada;
-            $totalIva += $ivaItem;
+        $ivaItem = $ivaPct > 0 ? $this->r6(($precioConIVA - $priceNoIva) * $cantidad) : 0.00;
 
-            $this->dte['cuerpoDocumento'][] = [
-                'numItem' => $i + 1,
-                'tipoItem' => $it['tipoItem'] ?? 2,
-                'numeroDocumento' => $it['numeroDocumento'] ?? null,
-                'cantidad' => $cantidad,
-                'codigo' => $it['codigo'] ?? null,
-                'codTributo' => $it['codTributo'] ?? null,
-                'uniMedida' => $it['uniMedida'] ?? 59,
-                'descripcion' => $it['descripcion'] ?? '',
-                'precioUni' => round($precioConIVA, 2),
-                'montoDescu' => $it['montoDescu'] ?? 0,
-                'ventaNoSuj' => 0,
-                'ventaExenta' => 0,
-                'ventaGravada' => $ventaGravada,
-                'tributos' => $it['tributos'] ?? null,
-                'psv' => $it['psv'] ?? 0,
-                'noGravado' => 0,
-                'ivaItem' => $ivaItem
-            ];
-        }
+        $subTotal = $this->r6($subTotal + $ventaNeta);
+        $totalIva = $this->r6($totalIva + $ivaItem);
 
-        // llenar resumen provisional (se completará en build())
-        $this->dte['resumen'] = [
-            'totalNoSuj' => 0,
-            'totalExenta' => 0,
-            'totalGravada' => round($subTotal, 2),
-            'subTotalVentas' => round($subTotal, 2),
-            'descuNoSuj' => 0,
-            'descuExenta' => 0,
-            'descuGravada' => 0,
-            'porcentajeDescuento' => 0,
-            'totalDescu' => 0,
-            'tributos' => [],
-            'subTotal' => round($subTotal, 2),
-            'ivaRete1' => 0,
-            'reteRenta' => 0,
-            'montoTotalOperacion' => round($subTotal, 2),
-            'totalNoGravado' => 0,
-            'totalPagar' => round($subTotal, 2),
-            'totalLetras' => $this->numeroALetras(round($subTotal,2)),
-            'totalIva' => round($totalIva, 2),
-            'saldoFavor' => 0,
-            'condicionOperacion' => 1,
-            'pagos' => [
-                [
-                    'codigo' => '03',
-                    'montoPago' => round($subTotal, 2),
-                    'plazo' => null,
-                    'referencia' => "",
-                    'periodo' => null
-                ]
-            ],
-            'numPagoElectronico' => null
+        $this->dte['cuerpoDocumento'][] = [
+            'numItem' => $i + 1,
+            'tipoItem' => $it['tipoItem'] ?? 2,
+            'numeroDocumento' => $it['numeroDocumento'] ?? null,
+            'cantidad' => $cantidad,
+            'codigo' => $it['codigo'] ?? null,
+            'codTributo' => $it['codTributo'] ?? null,
+            'uniMedida' => $it['uniMedida'] ?? 59,
+            'descripcion' => $it['descripcion'] ?? '',
+            'precioUni' => $this->r2($precioConIVA),
+            'montoDescu' => $this->r2($descItem),
+            'ventaNoSuj' => 0,
+            'ventaExenta' => 0,
+            'ventaGravada' => $this->r2($ventaNeta),
+            'tributos' => $it['tributos'] ?? null,
+            'ivaItem' => $this->r2($ivaItem),
         ];
+}
 
-        return $this;
-    }
+// Guardamos subtotales para aplicar descuento global en build()
+$this->dte['_subTotalBase'] = $subTotal;
+$this->dte['_totalIva'] = $totalIva;
+
+return $this;
+}
+
 
     /**
      * Generar número en letras (simple). Puedes reemplazar por NumberFormatter si quieres.

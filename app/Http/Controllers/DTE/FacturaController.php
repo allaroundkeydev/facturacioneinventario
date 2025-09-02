@@ -1,5 +1,5 @@
 <?php
-
+//app\Http\Controllers\DTE\FacturaController.php
 namespace App\Http\Controllers\DTE;
 
 use App\Http\Controllers\Controller;
@@ -20,6 +20,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Exception;
 
+protected function r6(float $v): float { return round($v, 6); }
+protected function r2(float $v): float { return round($v, 2); }
 class FacturaController extends Controller
 {
     /**
@@ -46,7 +48,292 @@ class FacturaController extends Controller
             'tipo', 'clientes', 'sucursales', 'cajas', 'productos', 'empresa'
         ));
     }
+public function preparar(Request $request): RedirectResponse
+{
+    // Validación base + descuentos
+    $validated = $request->validate([
+        'tipo' => ['required','string'],
+        'cliente_numero' => ['required','string'],
+        'sucursal_id' => ['nullable','integer','exists:sucursales,id'],
+        'caja_id' => ['nullable','integer','exists:cajas,id'],
+        'iva' => ['nullable','numeric'],
+        'descuento_global' => ['nullable','numeric','min:0'],
+        'items' => ['required','array','min:1'],
+        'items.*.descripcion' => ['required','string'],
+        'items.*.cantidad' => ['required','numeric','min:0.000001'],
+        'items.*.precio' => ['required','numeric','min:0'],
+        'items.*.montoDescu' => ['nullable','numeric','min:0'],
+        // receptor.* igual que en store()
+    ]);
 
+    // Guarda el draft completo en sesión (sin armar JSON aún)
+    session(['dte_draft' => [
+        'isCcf' => false,
+        'payload' => $validated,
+    ]]);
+
+    // Calcula total aproximado (server) para la pantalla de pago
+    $total = $this->calcularTotalServer($validated, false);
+
+    session(['dte_total' => $total]);
+
+    return redirect()->route('dte.pago');
+}
+
+public function prepararCcf(Request $request): RedirectResponse
+{
+    $rules = [
+        'receptor.numDocumento' => ['required','string'],
+        'receptor.nombre' => ['nullable','string'],
+        'items' => ['required','array','min:1'],
+        'items.*.cantidad' => ['required','numeric','min:0.000001'],
+        'items.*.precio' => ['required','numeric','min:0'],
+        'items.*.montoDescu' => ['nullable','numeric','min:0'],
+        'iva' => ['nullable','numeric'],
+        'descuento_global' => ['nullable','numeric','min:0'],
+    ];
+    $validated = $request->validate($rules);
+
+    session(['dte_draft' => [
+        'isCcf' => true,
+        'payload' => $validated,
+    ]]);
+
+    $total = $this->calcularTotalServer($validated, true);
+    session(['dte_total' => $total]);
+
+    return redirect()->route('dte.pago');
+}
+
+public function seleccionarPago()
+{
+    $draft = session('dte_draft');
+    if (!$draft) return redirect()->route('dte.index')->with('error','No hay datos para procesar.');
+    $total = session('dte_total') ?? 0;
+
+    $formasPago = \DB::table('formas_pago')->orderBy('codigo')->get();
+    $plazos = \DB::table('plazos')->orderBy('codigo')->get();
+
+    return view('dte.pago', [
+        'total' => $total,
+        'formasPago' => $formasPago,
+        'plazos' => $plazos,
+        'isCcf' => (bool)($draft['isCcf'] ?? false),
+    ]);
+}
+public function confirmar(Request $request): RedirectResponse
+{
+    $draft = session('dte_draft');
+    if (!$draft || ($draft['isCcf'] ?? false)) {
+        return redirect()->route('dte.index')->with('error','Flujo inválido.');
+    }
+    $pago = $this->validatePago($request);
+
+    // Combinar con builder y guardar
+    return $this->finalizarFactura($draft['payload'], $pago);
+}
+public function confirmarCcf(Request $request): RedirectResponse
+{
+    $draft = session('dte_draft');
+    if (!$draft || !($draft['isCcf'] ?? false)) {
+        return redirect()->route('dte.index')->with('error','Flujo inválido.');
+    }
+    $pago = $this->validatePago($request);
+
+    return $this->finalizarCcf($draft['payload'], $pago);
+}
+protected function validatePago(Request $request): array
+{
+    $data = $request->validate([
+        'pago_tipo' => ['required','in:efectivo,tarjeta,otras'],
+        'efectivo_monto' => ['nullable','numeric','min:0'],
+        'tarjeta_codigo' => ['nullable','in:02,03'],
+        'tarjeta_monto' => ['nullable','numeric','min:0'],
+        'tarjeta_referencia' => ['nullable','string','max:50'],
+        'otras' => ['nullable','array'],
+        'otras.*.codigo' => ['nullable','string','max:2'],
+        'otras.*.monto' => ['nullable','numeric','min:0'],
+        'otras.*.referencia' => ['nullable','string','max:50'],
+        'otras.*.plazo' => ['nullable','regex:/^0[1-3]$/'],
+        'otras.*.periodo' => ['nullable','integer','min:1'],
+    ]);
+
+    $total = session('dte_total') ?? 0;
+
+    $pagos = [];
+
+    if ($data['pago_tipo'] === 'efectivo') {
+        $monto = $this->r2((float)($data['efectivo_monto'] ?? $total));
+        // Para JSON usamos lo cobrado (no el cambio)
+        $monto = $monto > 0 ? min($monto, $this->r2($total)) : $this->r2($total);
+        $pagos[] = [
+            'codigo' => '01',
+            'montoPago' => $monto,
+            'referencia' => null,
+            'plazo' => null,
+            'periodo' => null,
+        ];
+    } elseif ($data['pago_tipo'] === 'tarjeta') {
+        $codigo = $data['tarjeta_codigo'] ?? '02';
+        $monto  = $this->r2((float)($data['tarjeta_monto'] ?? $total));
+        $monto = $monto > 0 ? min($monto, $this->r2($total)) : $this->r2($total);
+        $pagos[] = [
+            'codigo' => $codigo,
+            'montoPago' => $monto,
+            'referencia' => $data['tarjeta_referencia'] ?? null,
+            'plazo' => null,
+            'periodo' => null,
+        ];
+    } else {
+        foreach (($data['otras'] ?? []) as $row) {
+            $codigo = $row['codigo'] ?? null;
+            $monto  = isset($row['monto']) ? $this->r2((float)$row['monto']) : 0;
+            if (!$codigo || $monto <= 0) continue;
+
+            $pagos[] = [
+                'codigo' => $codigo,
+                'montoPago' => $monto,
+                'referencia' => $row['referencia'] ?? null,
+                'plazo' => $row['plazo'] ?? null,
+                'periodo' => isset($row['periodo']) ? (int)$row['periodo'] : null,
+            ];
+        }
+    }
+
+    // Si no se especifica monto válido, cargamos todo el total en la primera forma
+    if (empty($pagos)) {
+        $pagos[] = [
+            'codigo' => '01',
+            'montoPago' => $this->r2((float)$total),
+            'referencia' => null,
+            'plazo' => null,
+            'periodo' => null,
+        ];
+    }
+
+    return ['pagos' => $pagos];
+}
+protected function calcularTotalServer(array $payload, bool $isCcf): float
+{
+    $ivaPct = (float)($payload['iva'] ?? 0);
+    $glob = (float)($payload['descuento_global'] ?? 0);
+
+    $base = 0.0; $iva = 0.0;
+
+    foreach ($payload['items'] as $it) {
+        $qty = (float)($it['cantidad'] ?? 0);
+        $precio = (float)($it['precio'] ?? 0);
+        $desc = (float)($it['montoDescu'] ?? 0);
+
+        // precio con IVA en formulario
+        $priceNoIva = $ivaPct > 0 ? ($precio / (1 + $ivaPct/100)) : $precio;
+
+        // base con descuento por ítem
+        $lineaBase = max(0, ($priceNoIva * $qty) - $desc);
+        $base += $this->r6($lineaBase);
+
+        // IVA a partir del precio informado con IVA
+        $lineaIva = ($precio - $priceNoIva) * $qty;
+        $iva += $this->r6($lineaIva);
+    }
+
+    $base = max(0, $base - $glob);
+    return $this->r2($base + $iva);
+}
+protected function finalizarFactura(array $data, array $pago): RedirectResponse
+{
+    $empresa = auth()->user()->empresa;
+    if (!$empresa) return redirect()->route('empresa.create')->with('error','Empresa no configurada.');
+
+    // Construir receptor (igual a tu store actual)
+    $builder = new \App\Services\DteBuilder();
+    $builder->setEmisor($empresa);
+
+    // Receptor desde cliente o formulario (idéntico a tu lógica actual)
+    // ...
+    // Recomendación: reutiliza tu bloque ya probado y al final:
+    // $builder->setReceptor($receptorPayload, $numDocumento);
+
+    // Ítems con descuento por ítem y descuento global
+    $items = array_map(function($it){
+        return [
+            'descripcion' => $it['descripcion'],
+            'cantidad' => (float)$it['cantidad'],
+            'precio' => (float)$it['precio'],
+            'montoDescu' => (float)($it['montoDescu'] ?? 0),
+        ];
+    }, $data['items']);
+
+    $builder->setItems($items, (float)($data['iva'] ?? 0));
+    if (!empty($data['descuento_global'])) {
+        $builder->setGlobalDiscount((float)$data['descuento_global']);
+    }
+
+    // Identificación (igual a tu store)
+    // ...
+    // $builder->setIdentificacion([...]);
+
+    // Pagos
+    $builder->setPagos($pago['pagos']);
+
+    // Validar y guardar
+    $validation = $builder->validate();
+    if ($validation !== true) {
+        return redirect()->route('dte.create')->with('error','DTE inválido: '.implode(', ', $validation));
+    }
+
+    $jsonDte = $builder->build(); // aquí formatearemos a 2 decimales
+    try {
+        \App\Models\Dte::create([
+            'usuario_id' => auth()->id(),
+            'dte_json' => $jsonDte,
+            'respuesta_json' => null,
+            'codigo_generacion' => $jsonDte['identificacion']['codigoGeneracion'] ?? null,
+            'estado' => 'PENDIENTE',
+        ]);
+    } catch (\Throwable $e) {
+        \Log::error('Error creando DTE: '.$e->getMessage());
+        return redirect()->route('dte.create')->with('error','Error interno al guardar DTE.');
+    }
+
+    // Limpiar sesión del draft
+    session()->forget(['dte_draft','dte_total']);
+
+    return redirect()->route('dte.index')->with('success','DTE preparado con forma de pago.');
+}
+protected function finalizarCcf(array $data, array $pago): RedirectResponse
+{
+    $user = auth()->user();
+    $empresa = $user->empresa ?? null;
+    if (!$empresa) return back()->with('error','Empresa emisora no configurada.');
+
+    // Inyectar descuentos por ítem y global en $data
+    $data['items'] = array_map(function($it){
+        return [
+            'descripcion' => $it['descripcion'] ?? '',
+            'cantidad' => (float)$it['cantidad'],
+            'precio' => (float)$it['precio'],
+            'montoDescu' => (float)($it['montoDescu'] ?? 0),
+        ];
+    }, $data['items']);
+    $data['descuento_global'] = (float)($data['descuento_global'] ?? 0);
+
+    // Pagos
+    $data['pagos'] = $pago['pagos'];
+
+    $ccfService = new \App\Services\CcfService($empresa);
+
+    try {
+        $dteModel = $ccfService->createFromArray($data, $user);
+    } catch (\Exception $e) {
+        \Log::error('Error creando CCF: '.$e->getMessage());
+        return redirect()->route('dte.ccf.create')->with('error','Error creando CCF: '.$e->getMessage());
+    }
+
+    session()->forget(['dte_draft','dte_total']);
+
+    return redirect()->route('dte.index')->with('success','CCF preparado con forma de pago (ID: '.$dteModel->id.').');
+}
     /**
      * Guardar (preparar) el DTE — aquí únicamente validamos y guardamos el JSON en la BD.
      * La firma / envío a Hacienda lo implementaremos separadamente.
