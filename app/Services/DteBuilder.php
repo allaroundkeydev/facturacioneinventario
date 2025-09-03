@@ -5,15 +5,17 @@ namespace App\Services;
 use App\Models\Empresa;
 use Carbon\Carbon;
 
-protected float $globalDiscount = 0.0;
+
+
+class DteBuilder
+{
+    protected float $globalDiscount = 0.0;
 protected array $pagos = [];
 
 protected function r6(float $v): float { return round($v, 6); }
 protected function r2(float $v): float { return round($v, 2); }
-
-class DteBuilder
-{
     protected array $dte = [];
+
 
     public function __construct()
     {
@@ -239,13 +241,13 @@ public function setReceptor($receptor, ?string $numDocumento = null): self
     $totalIva = 0.0;
 
     foreach ($items as $i => $it) {
-        $cantidad = isset($it['cantidad']) ? floatval($it['cantidad']) : 0.0;
-        $precioConIVA = isset($it['precio']) ? floatval($it['precio']) : 0.0;
-        $descItem = isset($it['montoDescu']) ? floatval($it['montoDescu']) : 0.0;
+        $cantidad = (float)($it['cantidad'] ?? 0);
+        $precioConIVA = (float)($it['precio'] ?? 0);
+        $descItem = (float)($it['montoDescu'] ?? 0);
 
         $priceNoIva = $ivaPct > 0 ? ($precioConIVA / (1 + $ivaPct/100)) : $precioConIVA;
         $ventaBruta = $this->r6($priceNoIva * $cantidad);
-        $ventaNeta = max(0, $this->r6($ventaBruta - $descItem));
+        $ventaNeta  = max(0, $this->r6($ventaBruta - $descItem));
 
         $ivaItem = $ivaPct > 0 ? $this->r6(($precioConIVA - $priceNoIva) * $cantidad) : 0.00;
 
@@ -253,22 +255,21 @@ public function setReceptor($receptor, ?string $numDocumento = null): self
         $totalIva = $this->r6($totalIva + $ivaItem);
 
         $this->dte['cuerpoDocumento'][] = [
-            'numItem' => $i + 1,
-            'tipoItem' => $it['tipoItem'] ?? 2,
-            'numeroDocumento' => $it['numeroDocumento'] ?? null,
-            'cantidad' => $cantidad,
-            'codigo' => $it['codigo'] ?? null,
-            'codTributo' => $it['codTributo'] ?? null,
-            'uniMedida' => $it['uniMedida'] ?? 59,
-            'descripcion' => $it['descripcion'] ?? '',
-            'precioUni' => $this->r2($precioConIVA),
-            'montoDescu' => $this->r2($descItem),
-            'ventaNoSuj' => 0,
-            'ventaExenta' => 0,
-            'ventaGravada' => $this->r2($ventaNeta),
-            'tributos' => $it['tributos'] ?? null,
-            'ivaItem' => $this->r2($ivaItem),
+            'numItem'       => $i + 1,
+            'tipoItem'      => $it['tipoItem'] ?? 2,
+            'descripcion'   => $it['descripcion'] ?? '',
+            'cantidad'      => $cantidad,
+            'precioUni'     => $this->r2($precioConIVA),
+            'montoDescu'    => $this->r2($descItem),
+            'ventaGravada'  => $this->r2($ventaNeta),
+            'ivaItem'       => $this->r2($ivaItem),
         ];
+    }
+
+    $this->dte['_subTotalBase'] = $subTotal;
+    $this->dte['_totalIva']     = $totalIva;
+
+    return $this;
 }
 
 // Guardamos subtotales para aplicar descuento global en build()
@@ -302,44 +303,41 @@ return $this;
      * Build: realiza validaciones finales, ajusta cualquier valor faltante y devuelve el array final
      */
     public function build(): array
-    {
-        // Asegurar que identificacion tiene codigoGeneracion y numeroControl
-        if (empty($this->dte['identificacion']['codigoGeneracion'])) {
-            $this->dte['identificacion']['codigoGeneracion'] = $this->uuidV4();
+{
+    $dte = $this->dte;
+
+    // Aplicar descuento global proporcional
+    if ($this->globalDiscount > 0 && isset($dte['_subTotalBase'])) {
+        $base = $dte['_subTotalBase'];
+        $factor = ($base > 0) ? ($this->globalDiscount / $base) : 0;
+
+        foreach ($dte['cuerpoDocumento'] as &$line) {
+            $descExtra = $this->r6($line['ventaGravada'] * $factor);
+            $line['montoDescu'] = $this->r2($line['montoDescu'] + $descExtra);
+            $line['ventaGravada'] = $this->r2(max(0, $line['ventaGravada'] - $descExtra));
         }
-        if (empty($this->dte['identificacion']['numeroControl'])) {
-            // Default generico (mejor asignarlo fuera, pero dejamos fallback)
-            $this->dte['identificacion']['numeroControl'] = 'DTE-' .
-                str_pad((int)($this->dte['identificacion']['tipoDte'] ?? '1'), 2, '0', STR_PAD_LEFT) . '-' .
-                ($this->dte['emisor']['codEstableMH'] ?? 'M001') .
-                ($this->dte['emisor']['codPuntoVentaMH'] ?? 'P001') . '-' .
-                str_pad(rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
-        }
-
-        // Recalcular resumen si cuerpoDocumento tiene items
-        $subTotal = 0.0; $totalIva = 0.0;
-        foreach ($this->dte['cuerpoDocumento'] as $it) {
-            $subTotal += floatval($it['ventaGravada'] ?? 0);
-            $totalIva += floatval($it['ivaItem'] ?? 0);
-        }
-        $subTotal = round($subTotal, 2);
-        $totalIva = round($totalIva, 2);
-        $montoTotalOperacion = $subTotal;
-        $totalPagar = $montoTotalOperacion;
-
-        $this->dte['resumen']['totalGravada'] = $subTotal;
-        $this->dte['resumen']['subTotal'] = $subTotal;
-        $this->dte['resumen']['montoTotalOperacion'] = $montoTotalOperacion;
-        $this->dte['resumen']['totalPagar'] = $totalPagar;
-        $this->dte['resumen']['totalIva'] = $totalIva;
-        $this->dte['resumen']['totalLetras'] = $this->numeroALetras($totalPagar);
-        $this->dte['resumen']['pagos'][0]['montoPago'] = $totalPagar;
-
-        // Optional: eliminar claves null para limpiar
-        // $this->dte = $this->eliminarCamposNulos($this->dte);
-
-        return $this->dte;
+        unset($line);
     }
+
+    // Totales
+    $totalGravada = array_sum(array_column($dte['cuerpoDocumento'], 'ventaGravada'));
+    $totalIva     = array_sum(array_column($dte['cuerpoDocumento'], 'ivaItem'));
+
+    $dte['resumen']['totalGravada'] = $this->r2($totalGravada);
+    $dte['resumen']['totalIva']     = $this->r2($totalIva);
+    $dte['resumen']['montoTotalOperacion'] = $this->r2($totalGravada + $totalIva);
+    $dte['resumen']['totalPagar']   = $dte['resumen']['montoTotalOperacion'];
+
+    // Pagos
+    if (!empty($this->pagos)) {
+        $dte['resumen']['pagos'] = $this->pagos;
+        $dte['resumen']['numPagoElectronico'] = null;
+    }
+
+    unset($dte['_subTotalBase'], $dte['_totalIva']);
+
+    return $dte;
+}
 
     /**
      * Comprueba campos requeridos y devuelve array de errores o true si OK.

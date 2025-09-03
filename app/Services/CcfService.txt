@@ -152,21 +152,6 @@ $items[] = $item;
         $subTotal = round($subTotal, 2);
         $calculatedIva = round($calculatedIva, 2);
 
-        // === Aplicar descuento global si existe ===
-$descuentoGlobal = isset($input['descuento_global']) ? (float)$input['descuento_global'] : 0.0;
-if ($descuentoGlobal > 0) {
-    $factor = $subTotal > 0 ? ($descuentoGlobal / $subTotal) : 0;
-    foreach ($items as &$item) {
-        $descExtra = round($item['ventaGravada'] * $factor, 6); // 6 decimales internos
-        $item['montoDescu'] = round(($item['montoDescu'] ?? 0) + $descExtra, 2);
-        $item['ventaGravada'] = round(max(0, $item['ventaGravada'] - $descExtra), 2);
-    }
-    unset($item);
-
-    // Recalcular subtotal después del descuento global
-    $subTotal = array_sum(array_column($items, 'ventaGravada'));
-}
-
         // 4) Emisor: tomar desde $this->empresa (asegurar nombreComercial presente)
         $emisor = [
             'nit' => $this->empresa->api_user ?? $this->empresa->nit,
@@ -224,11 +209,9 @@ $resumen = [
     'subTotalVentas' => $subTotal,
     'descuNoSuj' => 0,
     'descuExenta' => 0,
-    'descuGravada' => $descuentoGlobal > 0 ? round($descuentoGlobal, 2) : 0,
-    'porcentajeDescuento' => $descuentoGlobal > 0 && $subTotal > 0
-        ? round(($descuentoGlobal / ($subTotal + $descuentoGlobal)) * 100, 2)
-        : 0,
-    'totalDescu' => $descuentoGlobal > 0 ? round($descuentoGlobal, 2) : 0,
+    'descuGravada' => 0,
+    'porcentajeDescuento' => 0,
+    'totalDescu' => 0,
     'tributos' => $tributosResumen,
     'subTotal' => $subTotal,
     'ivaPerci1' => 0.00, // ← DEBE SER 0 cuando se usan tributos
@@ -240,15 +223,15 @@ $resumen = [
     'totalLetras' => $this->numeroALetrasInt($subTotal + $calculatedIva),
     'saldoFavor' => 0,
     'condicionOperacion' => 1,
-    'pagos' => collect($input['pagos'] ?? [])->map(function ($p) use ($subTotal, $calculatedIva) {
-    return [
-        'codigo'     => (string)($p['codigo'] ?? '03'),
-        'montoPago'  => isset($p['montoPago']) ? round((float)$p['montoPago'], 2) : round($subTotal + $calculatedIva, 2),
-        'referencia' => $p['referencia'] ?? null,
-        'plazo'      => $p['plazo'] ?? null,
-        'periodo'    => $p['periodo'] ?? null,
-    ];
-})->values()->all(),
+    'pagos' => [
+        [
+            'codigo' => $input['pagos'][0]['codigo'] ?? '03',
+            'montoPago' => $subTotal + $calculatedIva,
+            'referencia' => $input['pagos'][0]['referencia'] ?? '',
+            'plazo' => $input['pagos'][0]['plazo'] ?? null,
+            'periodo' => $input['pagos'][0]['periodo'] ?? null,
+        ]
+    ],
     'numPagoElectronico' => $input['numPagoElectronico'] ?? null,
 ];
         // 6) Identificacion (version 3, tipoDte 03)

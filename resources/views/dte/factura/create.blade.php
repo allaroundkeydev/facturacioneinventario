@@ -19,11 +19,10 @@
         @endif
 
         <form
-  action="{{ $tipo && $tipo->codigo === '03' ? route('dte.ccf.preparar') : route('dte.preparar') }}"
-  method="POST"
-  id="dteForm">
-
-          @csrf
+    action="{{ isset($tipo) && $tipo->codigo === '03' ? route('dte.ccf.preparar') : route('dte.preparar') }}"
+    method="POST"
+    id="dteForm">
+    @csrf
 
           <input type="hidden" name="tipo" value="{{ $tipo->codigo ?? old('tipo', '01') }}">
 
@@ -170,7 +169,7 @@
                         <input name="items[{{ $i }}][precio]" value="{{ $it['precio'] ?? '0.00' }}" class="w-28 text-right precio-input" />
                       </td>
                       <td class="border px-2 py-1 text-right">
-                        <input name="items[{{ $i ?? 0 }}][montoDescu]" value="{{ $it['montoDescu'] ?? '0.00' }}" class="w-28 text-right descuento-input" />
+                        <input name="items[0][montoDescu]" value="0.00" class="w-28 text-right descuento-input" />
                       </td>
                       <td class="border px-2 py-1 text-center">
                         <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
@@ -202,17 +201,16 @@
               </tbody>
             </table>
 
-            <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-  <div>
+            <div class="mt-4">
     <label class="block text-sm font-medium text-gray-700">Descuento global</label>
     <input type="number" step="0.000001" name="descuento_global" id="descuento_global"
            value="{{ old('descuento_global', '0.000000') }}"
            class="mt-1 block w-40 border-gray-300 rounded-md shadow-sm text-right" />
     <p class="text-xs text-gray-500 mt-1">
-      El descuento por ítem se aplica antes de impuestos. El descuento global se aplica sobre el subtotal resultante.
+        El descuento por ítem se aplica antes de impuestos. El descuento global se aplica sobre el subtotal después de descuentos por ítem.
     </p>
-  </div>
 </div>
+
 
             <div class="mt-3 flex gap-2">
               <button id="add-item" type="button" class="px-4 py-2 bg-gray-200 rounded">Agregar Ítem</button>
@@ -299,25 +297,13 @@
         const idx = tbody.querySelectorAll('tr').length;
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td class="border px-2 py-1">
-            <input name="items[${idx}][codigo]" class="w-full" />
-          </td>
-          <td class="border px-2 py-1">
-            <input name="items[${idx}][descripcion]" class="w-full" />
-          </td>
-          <td class="border px-2 py-1 text-right">
-            <input name="items[${idx}][cantidad]" value="1" class="w-20 text-right cantidad-input" />
-          </td>
-          <td class="border px-2 py-1 text-right">
-            <input name="items[${idx}][precio]" value="0.00" class="w-28 text-right precio-input" />
-          </td>
-          <td class="border px-2 py-1 text-right">
-            <input name="items[${idx}][montoDescu]" value="0.00" class="w-28 text-right descuento-input" />
-          </td>
-          <td class="border px-2 py-1 text-center">
-            <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
-          </td>
-        `;
+    <td class="border px-2 py-1"><input name="items[${idx}][descripcion]" class="w-full" /></td>
+    <td class="border px-2 py-1 text-right"><input name="items[${idx}][cantidad]" value="1" class="w-20 text-right cantidad-input" /></td>
+    <td class="border px-2 py-1 text-right"><input name="items[${idx}][precio]" value="0.00" class="w-28 text-right precio-input" /></td>
+    <td class="border px-2 py-1 text-right"><input name="items[${idx}][montoDescu]" value="0.00" class="w-28 text-right descuento-input" /></td>
+    <td class="border px-2 py-1 text-right subtotal-cell">0.00</td>
+    <td class="border px-2 py-1 text-center"><button type="button" class="text-red-500 remove-row">X</button></td>
+`;
         tbody.appendChild(tr);
         reindex();
       });
@@ -341,32 +327,33 @@
       }
 
       function calcTotals() {
-  const ivaPct = parseFloat(qs('#ivaPct').value || 0);
-  const globDesc = parseFloat(qs('#descuento_global')?.value || 0);
+    const ivaPct = parseFloat(qs('#ivaPct')?.value || 0);
+    const globDesc = parseFloat(qs('#descuento_global')?.value || 0);
 
-  let subtotalBase = 0;   // base sin IVA y ya con descuentos por ítem
-  let ivaMonto = 0;
+    let subtotalBase = 0;
+    let ivaMonto = 0;
 
-  qsa('#items-body tr').forEach(tr => {
-    const qty = parseFloat(tr.querySelector('.cantidad-input')?.value || 0);
-    const priceWithIva = parseFloat(tr.querySelector('.precio-input')?.value || 0);
-    const itemDesc = parseFloat(tr.querySelector('.descuento-input')?.value || 0);
+    qsa('#items-body tr').forEach(tr => {
+        const qty = parseFloat(tr.querySelector('.cantidad-input')?.value || 0);
+        const priceWithIva = parseFloat(tr.querySelector('.precio-input')?.value || 0);
+        const itemDesc = parseFloat(tr.querySelector('.descuento-input')?.value || 0);
 
-    const priceNoIva = ivaPct > 0 ? (priceWithIva / (1 + ivaPct/100)) : priceWithIva;
-    const baseLinea = Math.max(0, (priceNoIva * qty) - itemDesc); // 6 decimales internos
-    const ivaLinea = (priceWithIva - priceNoIva) * qty;
+        const priceNoIva = ivaPct > 0 ? (priceWithIva / (1 + ivaPct/100)) : priceWithIva;
+        const baseLinea = Math.max(0, (priceNoIva * qty) - itemDesc);
+        const ivaLinea = (priceWithIva - priceNoIva) * qty;
 
-    subtotalBase += Math.round(baseLinea * 1e6) / 1e6;
-    ivaMonto     += Math.round(ivaLinea * 1e6) / 1e6;
-  });
+        subtotalBase += Math.round(baseLinea * 1e6) / 1e6;
+        ivaMonto     += Math.round(ivaLinea * 1e6) / 1e6;
 
-  // Aplica descuento global (no negativo)
-  const baseConGlobal = Math.max(0, subtotalBase - globDesc);
-  const total = baseConGlobal + ivaMonto;
+        tr.querySelector('.subtotal-cell').textContent = (baseLinea + ivaLinea).toFixed(2);
+    });
 
-  qs('#subtotal_view').value = baseConGlobal.toFixed(2);
-  qs('#iva_monto_view').value = ivaMonto.toFixed(2);
-  qs('#total_view').value = total.toFixed(2);
+    const baseConGlobal = Math.max(0, subtotalBase - globDesc);
+    const total = baseConGlobal + ivaMonto;
+
+    qs('#subtotal_view').value = baseConGlobal.toFixed(2);
+    qs('#iva_monto_view').value = ivaMonto.toFixed(2);
+    qs('#total_view').value = total.toFixed(2);
 }
 
       // Delegación para inputs de cantidad/precio (funciona para filas dinámicas)
