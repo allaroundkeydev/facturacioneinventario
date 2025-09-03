@@ -20,12 +20,14 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Exception;
 
-// Helpers de precisión
-protected function r6(float $v): float { return round($v, 6); }
-protected function r2(float $v): float { return round($v, 2); }
 
 class FacturaController extends Controller
 {
+
+    // Helpers de precisión
+protected function r6(float $v): float { return round($v, 6); }
+protected function r2(float $v): float { return round($v, 2); }
+
     /**
      * Mostrar formulario de creación de factura (DTE tipo Factura).
      */
