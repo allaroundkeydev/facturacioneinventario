@@ -78,96 +78,73 @@ class CcfService
             ],
         ];
 
-        // 3) Items: quitar cualquier 'ivaItem' y asegurar 'tributos' sea array (no null)
+        // 3) Items: procesar con descuentos
         $rawItems = $input['items'] ?? [];
         if (empty($rawItems) || !is_array($rawItems)) {
             throw new Exception('Items inválidos para CCF.');
         }
 
+        $descuentoGeneral = floatval($input['descuento_general'] ?? 0);
+        $ivaPct = floatval($input['iva'] ?? 13.0);
+
+        // Calcular total bruto para distribuir descuento
+        $totalVentaBruta = 0;
+        foreach ($rawItems as $it) {
+            $totalVentaBruta += floatval($it['cantidad'] ?? 0) * floatval($it['precio'] ?? 0);
+        }
+
         $items = [];
-        $subTotal = 0.0;
-        $ivaPct = floatval($input['iva'] ?? 0.0);
+        $totalVentasNetas = 0.0;
         $calculatedIva = 0.0;
+        $totalDescuentos = 0.0;
 
         foreach ($rawItems as $i => $it) {
-    $cantidad = (float)($it['cantidad'] ?? 0);
-    $precio = (float)($it['precio'] ?? 0);
-    $ventaGravada = round($precio * $cantidad, 2);
+            $cantidad = floatval($it['cantidad'] ?? 0);
+            $precioConIVA = floatval($it['precio'] ?? 0);
+            $itemDescuentoIndividual = floatval($it['descuento'] ?? 0);
+            $itemValorBruto = $cantidad * $precioConIVA;
 
-    // Calcular IVA para resumen (no incluir ivaItem en item)
-    $ivaItem = $ivaPct > 0 ? round($ventaGravada * $ivaPct / 100, 2) : 0.0;
-    $calculatedIva += $ivaItem;
-    $subTotal += $ventaGravada;
-
-    // Asegurar tributos del item (solo si vienen del input y son válidos)
-// 1. INICIALIZAR EL ARRAY DE TRIBUTOS
-    $tributos = [];
-    
-    // 2. AÑADIR IVA (CÓDIGO '20') SI EL ITEM ES GRAVADO
-
-    if ($ventaGravada > 0) {
-        $tributos[] = '20'; 
-    }
-    
-    // 3. AÑADIR OTROS TRIBUTOS ESPECIALES SI VIENEN EN EL INPUT
-    // Tu lógica original se mantiene, pero ahora complementa al IVA.
-    if (!empty($it['tributos']) && is_array($it['tributos'])) {
-        foreach ($it['tributos'] as $trib) {
-            if (in_array($trib, ['51','52','53', /* ...etc */])) {
-                if (!in_array($trib, $tributos)) { // Evitar duplicados
-                    $tributos[] = $trib;
-                }
+            $descuentoProporcional = 0;
+            if ($totalVentaBruta > 0) {
+                $descuentoProporcional = ($itemValorBruto / $totalVentaBruta) * $descuentoGeneral;
             }
+            $montoDescuConIVA = $itemDescuentoIndividual + $descuentoProporcional;
+
+            // Para CCF, el precio unitario y el descuento se expresan SIN IVA
+            $precioUnitarioSinIva = $ivaPct > 0 ? $precioConIVA / (1 + $ivaPct / 100) : $precioConIVA;
+            $montoDescuSinIva = $ivaPct > 0 ? $montoDescuConIVA / (1 + $ivaPct / 100) : $montoDescuConIVA;
+
+            $ventaNeta = ($cantidad * $precioUnitarioSinIva) - $montoDescuSinIva;
+            $ivaItem = $ventaNeta * ($ivaPct / 100);
+
+            $totalVentasNetas += $ventaNeta;
+            $calculatedIva += $ivaItem;
+            $totalDescuentos += $montoDescuConIVA;
+
+            // Para CCF, el IVA se reporta en el array de tributos del item
+            $tributos = ['20']; // 20 = IVA
+
+            $item = [
+                'numItem' => $i + 1,
+                'tipoItem' => $it['tipoItem'] ?? 1,
+                'numeroDocumento' => $it['numeroDocumento'] ?? null,
+                'codigo' => $it['codigo'] ?? null,
+                'descripcion' => $it['descripcion'] ?? '',
+                'cantidad' => $cantidad,
+                'uniMedida' => $it['uniMedida'] ?? 59,
+                'precioUni' => round($precioUnitarioSinIva, 6),
+                'montoDescu' => round($montoDescuSinIva, 6),
+                'ventaNoSuj' => 0,
+                'ventaExenta' => 0,
+                'ventaGravada' => round($ventaNeta, 6),
+                'tributos' => $tributos,
+                'psv' => 0.0,
+                'noGravado' => 0,
+            ];
+            $items[] = $item;
         }
-    }
 
-
-    $item = [
-    'numItem' => $i + 1,
-    'tipoItem' => $it['tipoItem'] ?? 2,
-    'numeroDocumento' => $it['numeroDocumento'] ?? null,
-    'codigo' => $it['codigo'] ?? null,
-    'descripcion' => $it['descripcion'] ?? '',
-    'cantidad' => $cantidad,
-    'uniMedida' => $it['uniMedida'] ?? 59,
-    'precioUni' => round($precio, 2),
-    'montoDescu' => $it['montoDescu'] ?? 0,
-    'ventaNoSuj' => 0,
-    'ventaExenta' => 0,
-    'ventaGravada' => $ventaGravada,
-    'psv' => $it['psv'] ?? 0,
-    'noGravado' => 0,
-    'codTributo' => null,
-];
-
-// Solo añadir tributos si hay alguno válido
-if (!empty($tributos)) {
-    $item['tributos'] = $tributos;
-}
-
-$items[] = $item;
-
-}
-
-        $subTotal = round($subTotal, 2);
-        $calculatedIva = round($calculatedIva, 2);
-
-        // === Aplicar descuento global si existe ===
-$descuentoGlobal = isset($input['descuento_global']) ? (float)$input['descuento_global'] : 0.0;
-if ($descuentoGlobal > 0) {
-    $factor = $subTotal > 0 ? ($descuentoGlobal / $subTotal) : 0;
-    foreach ($items as &$item) {
-        $descExtra = round($item['ventaGravada'] * $factor, 6); // 6 decimales internos
-        $item['montoDescu'] = round(($item['montoDescu'] ?? 0) + $descExtra, 2);
-        $item['ventaGravada'] = round(max(0, $item['ventaGravada'] - $descExtra), 2);
-    }
-    unset($item);
-
-    // Recalcular subtotal después del descuento global
-    $subTotal = array_sum(array_column($items, 'ventaGravada'));
-}
-
-        // 4) Emisor: tomar desde $this->empresa (asegurar nombreComercial presente)
+        // 4) Emisor
         $emisor = [
             'nit' => $this->empresa->api_user ?? $this->empresa->nit,
             'nrc' => $this->empresa->nrc ?? null,
@@ -189,90 +166,70 @@ if ($descuentoGlobal > 0) {
             'codPuntoVenta' => $this->empresa->cod_punto_venta ?? null,
         ];
 
-// Calcular los códigos de tributos únicos de todos los ítems
-$tributosCodes = collect($input['items'])->flatMap(function ($it) {
-    return $it['tributos'] ?? [];
-})->unique()->values()->toArray();
+        // 5) Resumen
+        $subTotal = $totalVentasNetas;
+        $montoTotalOperacion = $subTotal + $calculatedIva;
 
-// Asegurar que el tributo "20" esté presente si hay IVA calculado
-if ($calculatedIva > 0 && !in_array('20', $tributosCodes)) {
-    $tributosCodes[] = '20';
-}
+        $resumen = [
+            'totalNoSuj' => 0,
+            'totalExenta' => 0,
+            'totalGravada' => round($subTotal, 2),
+            'subTotalVentas' => round($subTotal, 2),
+            'descuNoSuj' => 0,
+            'descuExenta' => 0,
+            'descuGravada' => round($totalDescuentos, 2),
+            'porcentajeDescuento' => 0,
+            'totalDescu' => round($totalDescuentos, 2),
+            'tributos' => [
+                [
+                    'codigo' => '20',
+                    'descripcion' => 'Impuesto al Valor Agregado 13%',
+                    'valor' => round($calculatedIva, 2)
+                ]
+            ],
+            'subTotal' => round($subTotal, 2),
+            'ivaPerci1' => 0.00,
+            'ivaRete1' => 0,
+            'reteRenta' => 0,
+            'montoTotalOperacion' => round($montoTotalOperacion, 2),
+            'totalNoGravado' => 0,
+            'totalPagar' => round($montoTotalOperacion, 2),
+            'totalLetras' => $this->numeroALetrasInt($montoTotalOperacion),
+            'saldoFavor' => 0,
+            'condicionOperacion' => 1,
+            'pagos' => [
+                [
+                    'codigo' => $input['pagos'][0]['codigo'] ?? '01',
+                    'montoPago' => round($montoTotalOperacion, 2),
+                    'referencia' => $input['pagos'][0]['referencia'] ?? null,
+                    'plazo' => $input['pagos'][0]['plazo'] ?? null,
+                    'periodo' => $input['pagos'][0]['periodo'] ?? null,
+                ]
+            ],
+            'numPagoElectronico' => $input['numPagoElectronico'] ?? null,
+        ];
 
-// Construir el array de tributos para el resumen
-$tributosResumen = [];
-foreach ($tributosCodes as $codigo) {
-    if ($codigo === '20') {
-        $valor = $calculatedIva; // Usar el IVA calculado
-    } else {
-        // Para otros tributos, calcula el valor adecuado si es necesario
-        // Por ahora, 0.00 como placeholder (debes ajustar si aplican otros tributos)
-        $valor = 0.00;
-    }
-    $tributosResumen[] = [
-        'codigo' => $codigo,
-        'descripcion' => $this->descripcionTributo($codigo),
-        'valor' => $valor,
-    ];
-}
-
-// 5) Resumen: usar ivaPerci1 en 0 cuando se usan tributos
-$resumen = [
-    'totalNoSuj' => 0,
-    'totalExenta' => 0,
-    'totalGravada' => $subTotal,
-    'subTotalVentas' => $subTotal,
-    'descuNoSuj' => 0,
-    'descuExenta' => 0,
-    'descuGravada' => $descuentoGlobal > 0 ? round($descuentoGlobal, 2) : 0,
-    'porcentajeDescuento' => $descuentoGlobal > 0 && $subTotal > 0
-        ? round(($descuentoGlobal / ($subTotal + $descuentoGlobal)) * 100, 2)
-        : 0,
-    'totalDescu' => $descuentoGlobal > 0 ? round($descuentoGlobal, 2) : 0,
-    'tributos' => $tributosResumen,
-    'subTotal' => $subTotal,
-    'ivaPerci1' => 0.00, // ← DEBE SER 0 cuando se usan tributos
-    'ivaRete1' => 0,
-    'reteRenta' => 0,
-    'montoTotalOperacion' => $subTotal + $calculatedIva,
-    'totalNoGravado' => 0,
-    'totalPagar' => $subTotal + $calculatedIva,
-    'totalLetras' => $this->numeroALetrasInt($subTotal + $calculatedIva),
-    'saldoFavor' => 0,
-    'condicionOperacion' => 1,
-    'pagos' => collect($input['pagos'] ?? [])->map(function ($p) use ($subTotal, $calculatedIva) {
-    return [
-        'codigo'     => (string)($p['codigo'] ?? '03'),
-        'montoPago'  => isset($p['montoPago']) ? round((float)$p['montoPago'], 2) : round($subTotal + $calculatedIva, 2),
-        'referencia' => $p['referencia'] ?? null,
-        'plazo'      => $p['plazo'] ?? null,
-        'periodo'    => $p['periodo'] ?? null,
-    ];
-})->values()->all(),
-    'numPagoElectronico' => $input['numPagoElectronico'] ?? null,
-];
         // 6) Identificacion (version 3, tipoDte 03)
         $codigoGeneracion = Str::upper(Str::uuid()->toString());
         $tipoPad = '03';
         $numeroControl = 'DTE-' . $tipoPad . '-' . ($emisor['codEstableMH'] ?? 'M001') . ($emisor['codPuntoVentaMH'] ?? 'P001') . '-' . str_pad(rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
 
         $identificacion = [
-    'version' => 3,
-    'ambiente' => config('services.dte.ambiente', '00'),
-    'tipoDte' => '03',
-    'tipoModelo' => 1,
-    'tipoOperacion' => 1,
-    'numeroControl' => $numeroControl,
-    'codigoGeneracion' => $codigoGeneracion,
-    'fecEmi' => Carbon::now()->format('Y-m-d'),
-    'horEmi' => Carbon::now()->format('H:i:s'),
-    'tipoMoneda' => $input['tipoMoneda'] ?? 'USD',
-    // 🔹 El schema lo requiere aunque no haya contingencia
-    'tipoContingencia' => null,
-    'motivoContin' => null,
-];
+            'version' => 3,
+            'ambiente' => config('services.dte.ambiente', '00'),
+            'tipoDte' => '03',
+            'tipoModelo' => 1,
+            'tipoOperacion' => 1,
+            'numeroControl' => $numeroControl,
+            'codigoGeneracion' => $codigoGeneracion,
+            'fecEmi' => Carbon::now()->format('Y-m-d'),
+            'horEmi' => Carbon::now()->format('H:i:s'),
+            'tipoMoneda' => $input['tipoMoneda'] ?? 'USD',
+            'tipoContingencia' => null,
+            'motivoContin' => null,
+        ];
 
-        // 7) Estructura final DTE para CCF (cumple esquema esperado)
+        // 7) Estructura final DTE para CCF
         $dteArray = [
             'identificacion' => $identificacion,
             'documentoRelacionado' => null,
@@ -286,14 +243,14 @@ $resumen = [
             'apendice' => $input['apendice'] ?? null,
         ];
 
-        // 8) Validaciones básicas (si fallan, lanzar Exception con detalles)
+        // 8) Validaciones
         $errors = $this->validateCcfArray($dteArray);
         if (!empty($errors)) {
             Log::warning('Validación CCF fallida', ['errors' => $errors, 'dte' => $dteArray]);
             throw new Exception('Validación CCF: ' . implode('; ', $errors));
         }
 
-        // 9) Crear registro DTE en BD (estado CREADO)
+        // 9) Crear registro DTE en BD
         $dteModel = Dte::create([
             'usuario_id' => $user->id,
             'empresa_id' => $this->empresa->id,

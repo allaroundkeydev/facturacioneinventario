@@ -213,54 +213,69 @@
             </div>
           </div>
 
-          
+          <hr class="my-6">
 
-          {{-- ... justo encima del botón Generar DTE ... --}}
-<hr class="my-6">
+          {{-- Forma de Pago --}}
+          <div>
+            <h3 class="font-semibold mb-3">Forma de Pago</h3>
+            <div id="payment-method-selector" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {{-- Efectivo --}}
+              <div data-payment-method="cash" class="p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
+                <span class="text-3xl">💵</span>
+                <span class="text-lg font-medium text-gray-800">Efectivo</span>
+              </div>
+              {{-- Tarjeta --}}
+              <div data-payment-method="card" class="p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
+                <span class="text-3xl">💳</span>
+                <span class="text-lg font-medium text-gray-800">Tarjeta</span>
+              </div>
+              {{-- Otro --}}
+              <div data-payment-method="other" class="p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
+                <span class="text-3xl">📄</span>
+                <span class="text-lg font-medium text-gray-800">Otro</span>
+              </div>
+            </div>
 
-{{-- Forma de Pago --}}
-<div class="mt-6">
-  <h3 class="font-semibold mb-3">Forma de Pago</h3>
+            {{-- Contenedores para detalles de pago (ocultos por defecto) --}}
+            <div id="payment-details" class="mt-4"></div>
+          </div>
 
-  {{-- Selector principal (opción: clickable cards o un select) --}}
-  <div id="payment-method-selector" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-    <div data-payment-method="cash"
-         class="payment-option p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
-      <span class="text-3xl">💵</span>
-      <span class="text-lg font-medium text-gray-800">Efectivo</span>
-    </div>
-    <div data-payment-method="card"
-         class="payment-option p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
-      <span class="text-3xl">💳</span>
-      <span class="text-lg font-medium text-gray-800">Tarjeta</span>
-    </div>
-    <div data-payment-method="other"
-         class="payment-option p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
-      <span class="text-3xl">📄</span>
-      <span class="text-lg font-medium text-gray-800">Otros</span>
-    </div>
-  </div>
+          {{-- Hidden inputs para el pago --}}
+          <input type="hidden" name="pagos[0][codigo]" id="pago_codigo">
+          <input type="hidden" name="pagos[0][montoPago]" id="pago_montoPago">
+          <input type="hidden" name="pagos[0][referencia]" id="pago_referencia">
 
-  {{-- Aquí aparecerán los campos específicos --}}
-  <div id="payment-details" class="mt-4"></div>
-</div>
+          <hr class="my-6">
 
-{{-- Hidden inputs para el pago --}}
-<!-- contenedor donde añadiremos bloques de pago -->
-<div id="pagos-container"></div>
-<button 
-  type="button" 
-  id="add-payment" 
-  class="mt-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
->
-  Agregar forma de pago
-</button>
+          {{-- Forma de Pago --}}
+           <div>
+            <h3 class="font-semibold mb-3">Forma de Pago</h3>
+            <div id="payment-method-selector" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {{-- Efectivo --}}
+              <div data-payment-method="cash" class="p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
+                <span class="text-3xl">💵</span>
+                <span class="text-lg font-medium text-gray-800">Efectivo</span>
+              </div>
+              {{-- Tarjeta --}}
+              <div data-payment-method="card" class="p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
+                <span class="text-3xl">💳</span>
+                <span class="text-lg font-medium text-gray-800">Tarjeta</span>
+              </div>
+              {{-- Otro --}}
+              <div data-payment-method="other" class="p-4 bg-white rounded-2xl shadow border-2 border-transparent cursor-pointer hover:border-blue-500 transition flex items-center space-x-3">
+                <span class="text-3xl">📄</span>
+                <span class="text-lg font-medium text-gray-800">Otro</span>
+              </div>
+            </div>
 
+            {{-- Contenedores para detalles de pago (ocultos por defecto) --}}
+            <div id="payment-details" class="mt-4"></div>
+          </div>
 
-
-
-
-          
+          {{-- Hidden inputs para el pago --}}
+          <input type="hidden" name="pagos[0][codigo]" id="pago_codigo">
+          <input type="hidden" name="pagos[0][montoPago]" id="pago_montoPago">
+          <input type="hidden" name="pagos[0][referencia]" id="pago_referencia">
 
           <div class="mt-6 flex justify-end">
             <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700">
@@ -308,7 +323,6 @@
   @push('scripts')
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      
       // ---------- helpers ----------
       const qs = (s, root=document) => root.querySelector(s);
       const qsa = (s, root=document) => Array.from(root.querySelectorAll(s));
@@ -390,275 +404,103 @@
         }
       });
 
-      // ─── Lógica para Forma de Pago (multi-bloque) ───
-let pagoIndex      = 0;
-let activePagoIdx  = null;
-const pagosContainer = qs('#pagos-container');
-const addPaymentBtn  = qs('#add-payment');
+      // ---------- Lógica para Forma de Pago ----------
+      const paymentSelector = qs('#payment-method-selector');
+      const paymentDetailsContainer = qs('#payment-details');
+      const pagoCodigoInput = qs('#pago_codigo');
+      const pagoMontoInput = qs('#pago_montoPago');
+      const pagoReferenciaInput = qs('#pago_referencia');
 
-const paymentSelector         = qs('#payment-method-selector');
-const paymentDetailsContainer = qs('#payment-details');
+      const paymentTemplates = {
+        cash: `
+          <div class="p-4 bg-gray-50 rounded-lg">
+            <label class="block text-sm font-medium text-gray-700">Monto Recibido</label>
+            <input type="number" id="monto_recibido" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring" placeholder="0.00" step="0.01">
+            <p class="mt-2 text-sm text-gray-600">Cambio: <span id="cambio_view" class="font-medium">$0.00</span></p>
+          </div>
+        `,
+        card: `
+          <div class="p-4 bg-gray-50 rounded-lg">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de Tarjeta</label>
+            <div class="flex space-x-4">
+              <button type="button" data-card-type="02" class="payment-card-type-btn px-4 py-2 bg-white border rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">Débito</button>
+              <button type="button" data-card-type="03" class="payment-card-type-btn px-4 py-2 bg-white border rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">Crédito</button>
+            </div>
+            <label class="block text-sm font-medium text-gray-700 mt-4">Referencia (opcional)</label>
+            <input type="text" id="card_referencia" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring" placeholder="Ej: últimos 4 dígitos, ID de transacción">
+          </div>
+        `,
+        other: `
+          <div class="p-4 bg-gray-50 rounded-lg">
+            <label class="block text-sm font-medium text-gray-700">Seleccione una opción</label>
+            <select id="other_payment_method" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring">
+              <option value="">-- Seleccione --</option>
+            </select>
+            <label class="block text-sm font-medium text-gray-700 mt-4">Referencia (requerido si es 'Otros')</label>
+            <input type="text" id="other_referencia" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring">
+          </div>
+        `
+      };
 
+      function updatePaymentDetails(method) {
+        paymentDetailsContainer.innerHTML = paymentTemplates[method] || '';
+        if (method === 'other') {
+          const select = qs('#other_payment_method');
+          if (window.formasPago) {
+            const otherMethods = window.formasPago.filter(fp => !['01', '02', '03'].includes(fp.codigo));
+            otherMethods.forEach(fp => {
+              const option = document.createElement('option');
+              option.value = fp.codigo;
+              option.textContent = fp.descripcion;
+              select.appendChild(option);
+            });
+          }
+        }
+      }
 
-// 1) Renderiza el HTML base de un bloque de pago
-function renderPagoBlock(idx) {
-  return `
-    <div class="pago-block mt-2 p-4 border rounded bg-gray-50" data-idx="${idx}">
-      <div class="flex justify-between items-center mb-2">
-        <p class="pago-summary text-sm text-gray-800">Forma de pago #${idx+1}</p>
-        <div>
-          <button type="button" data-action="edit"   class="text-blue-600 hover:underline mr-2">Editar</button>
-          <button type="button" data-action="delete" class="text-red-600 hover:underline">Eliminar</button>
-        </div>
-      </div>
-      <input type="hidden" name="pagos[${idx}][codigo]"    class="pago-codigo" />
-      <input type="hidden" name="pagos[${idx}][montoPago]" class="pago-monto" />
-      <input type="hidden" name="pagos[${idx}][referencia]" class="pago-ref" />
-    </div>
-  `;
-}
+      paymentSelector.addEventListener('click', (e) => {
+        const target = e.target.closest('[data-payment-method]');
+        if (!target) return;
+        const method = target.dataset.paymentMethod;
 
-function getCurrentPagoEls() {
-  const block = qs(`.pago-block[data-idx="${activePagoIdx}"]`);
-  return {
-    summaryEl: block.querySelector('.pago-summary'),
-    codigoEl:  block.querySelector('.pago-codigo'),
-    montoEl:   block.querySelector('.pago-monto'),
-    refEl:     block.querySelector('.pago-ref'),
-  };
-}
-
-
-// 2) Añade un bloque nuevo y lo marca como activo
-function addPaymentBlock() {
-  pagosContainer.insertAdjacentHTML('beforeend', renderPagoBlock(pagoIndex));
-  activePagoIdx = pagoIndex;
-  pagoIndex++;
-  paymentDetailsContainer.innerHTML = '';
-}
-
-// 3) Obtiene los <input> dentro del bloque activo
-function getCurrentPagoEls() {
-  const block = qs(`.pago-block[data-idx="${activePagoIdx}"]`);
-  return {
-    summaryEl: block.querySelector('.pago-summary'),
-    codigoEl:  block.querySelector('.pago-codigo'),
-    montoEl:   block.querySelector('.pago-monto'),
-    refEl:     block.querySelector('.pago-ref'),
-  };
-}
-
-// 4) Genera el primer bloque al cargar la página
-addPaymentBlock();
-
-// 5) Permite agregar más formas de pago al botón
-addPaymentBtn.addEventListener('click', addPaymentBlock);
-// 6bis) Edit / Delete con un solo listener en el container
-pagosContainer.addEventListener('click', e => {
-  const action = e.target.dataset.action;
-  if (!action) return;
-
-  const block = e.target.closest('.pago-block');
-  const idx   = Number(block.dataset.idx);
-
-  if (action === 'delete') {
-    block.remove();
-    reindexPagos();             // <— renumera restos
-    paymentDetailsContainer.innerHTML = '';
-    return;
-  }
-
-  if (action === 'edit') {
-    activePagoIdx = idx;
-    // resalto visualmente
-    qsa('.pago-block').forEach(b => b.classList.remove('ring','ring-blue-300'));
-    block.classList.add('ring','ring-blue-300');
-
-    // Pinto el formulario con los valores actuales
-    const { codigoEl, refEl } = getCurrentPagoEls();
-    updatePaymentDetails(codigoEl.value || 'cash');
-    // Si ya había referencia previa:
-    qs('#card_referencia, #other_referencia')?.forEach(inp => {
-      inp.value = refEl.value;
-    });
-  }
-});
-
-
-// 6) Cuando el usuario elige Efectivo/Tarjeta/Otros
-paymentSelector.addEventListener('click', e => {
-  const card = e.target.closest('[data-payment-method]');
-  if (!card) return;
-
-  qsa('[data-payment-method]').forEach(el =>
-    el.classList.remove('border-blue-500','bg-blue-50')
-  );
-  card.classList.add('border-blue-500','bg-blue-50');
-
-  updatePaymentDetails(card.dataset.paymentMethod);
-});
-
-// 7) Plantillas de HTML según método
-const paymentTemplates = {
-  cash: `
-    <div class="p-4 bg-gray-50 rounded-lg">
-      <label>Monto Recibido</label>
-      <input id="monto_recibido" type="number" step="0.01" class="mt-1 w-full" placeholder="0.00"/>
-      <p>Cambio: <span id="cambio_view">0.00</span></p>
-    </div>`,
-  card: `
-    <div class="p-4 bg-gray-50 rounded-lg">
-      <button type="button" data-card-type="02" class="payment-card-type-btn px-4 py-2 bg-white border rounded-md">Débito</button>
-      <button type="button" data-card-type="03" class="payment-card-type-btn px-4 py-2 bg-white border rounded-md">Crédito</button>
-      <input id="card_referencia" type="text" class="mt-2 w-full" placeholder="Referencia"/>
-    </div>`,
-  other: `
-    <div class="p-4 bg-gray-50 rounded-lg">
-      <select id="other_payment_method" class="mt-1 w-full border rounded">
-        <option value="">--Seleccione--</option>
-      </select>
-      <input id="other_referencia" type="text" class="mt-2 w-full" placeholder="Detalle"/>
-    </div>`
-};
-
-function reindexPagos() {
-  qsa('.pago-block').forEach((block, newIdx) => {
-    // 1) renumero data-idx
-    block.dataset.idx = newIdx;
-    // 2) actualizo el texto
-    block.querySelector('.pago-summary').textContent = `Forma de pago #${newIdx+1}`;
-    // 3) actualizo los atributos name de los hidden inputs
-    block.querySelector('.pago-codigo').setAttribute('name', `pagos[${newIdx}][codigo]`);
-    block.querySelector('.pago-monto').setAttribute('name',  `pagos[${newIdx}][montoPago]`);
-    block.querySelector('.pago-ref').setAttribute('name',    `pagos[${newIdx}][referencia]`);
-  });
-  // reajusto el índice del siguiente bloque
-  pagoIndex = qsa('.pago-block').length;
-}
-
-
-// 8) Rellena el contenedor de detalles y engancha eventos
-function updatePaymentDetails(method) {
-  paymentDetailsContainer.innerHTML = paymentTemplates[method]||'';
-  const { codigoEl, montoEl, refEl } = getCurrentPagoEls();
-  montoEl.value = qs('#total_view').value || '';
-
-  if (method === 'cash') {
-  const inpRecibido = qs('#monto_recibido');
-  inpRecibido.addEventListener('input', e => {
-    const total   = parseFloat(qs('#total_view').value) || 0;
-    const recibio = parseFloat(e.target.value) || 0;
-    qs('#cambio_view').textContent = (recibio - total).toFixed(2);
-
-    const { summaryEl, codigoEl, montoEl } = getCurrentPagoEls();
-    codigoEl.value = '01';
-    montoEl.value  = total.toFixed(2); // montoPago = total factura
-    summaryEl.textContent = `Efectivo – $${total.toFixed(2)} (Cambio: ${ (recibio-total).toFixed(2) })`;
-  });
-}
-
-
-  if (method === 'card') {
-    qsa('.payment-card-type-btn').forEach(btn =>
-      btn.addEventListener('click', e => {
-        qsa('.payment-card-type-btn').forEach(b =>
-          b.classList.remove('bg-blue-200','border-blue-400')
-        );
-        e.currentTarget.classList.add('bg-blue-200','border-blue-400');
-        codigoEl.value = e.currentTarget.dataset.cardType;
-      })
-    );
-    qs('#card_referencia').addEventListener('input', e => {
-      refEl.value = e.target.value;
-    });
-  }
-
-  if (method === 'other') {
-    const select = qs('#other_payment_method');
-    window.formasPago
-      .filter(fp => !['01','02','03'].includes(fp.codigo))
-      .forEach(fp => {
-        const opt = document.createElement('option');
-        opt.value = fp.codigo;
-        opt.textContent = `${fp.codigo} – ${fp.descripcion}`;
-        select.appendChild(opt);
+        qsa('[data-payment-method]').forEach(el => el.classList.remove('border-blue-500', 'bg-blue-50'));
+        target.classList.add('border-blue-500', 'bg-blue-50');
+        
+        updatePaymentDetails(method);
+        pagoCodigoInput.value = method === 'cash' ? '01' : '';
+        pagoReferenciaInput.value = '';
       });
-    select.addEventListener('change', e => {
-      codigoEl.value = e.target.value;
-    });
-    qs('#other_referencia').addEventListener('input', e => {
-      refEl.value = e.target.value;
-    });
-  }
 
-
-
-  function updatePaymentDetails(method) {
-  paymentDetailsContainer.innerHTML = paymentTemplates[method] || '';
-  const { summaryEl, codigoEl, montoEl, refEl } = getCurrentPagoEls();
-
-  // monto siempre es el total
-  montoEl.value = qs('#total_view').value || '';
-
-  if (method === 'cash') {
-    qs('#monto_recibido').addEventListener('input', e => {
-      const total = parseFloat(qs('#total_view').value) || 0;
-      const rec   = parseFloat(e.target.value) || 0;
-      qs('#cambio_view').textContent = (rec - total).toFixed(2);
-      codigoEl.value = '01';
-      // **resumen**
-      summaryEl.textContent = `Efectivo – $${montoEl.value}`;
-    });
-  }
-
-  if (method === 'card') {
-    qsa('.payment-card-type-btn').forEach(btn =>
-      btn.addEventListener('click', e => {
-        qsa('.payment-card-type-btn').forEach(b =>
-          b.classList.remove('bg-blue-200','border-blue-400')
-        );
-        e.currentTarget.classList.add('bg-blue-200','border-blue-400');
-
-        const tipo = e.currentTarget.dataset.cardType;
-        codigoEl.value = tipo;
-        summaryEl.textContent = 
-          (tipo === '02' ? 'Tarjeta Débito' : 'Tarjeta Crédito') +
-          ` – $${montoEl.value}`;
-      })
-    );
-    qs('#card_referencia').addEventListener('input', e => {
-      refEl.value = e.target.value;
-      summaryEl.textContent += ` (Ref: ${e.target.value})`;
-    });
-  }
-
-  if (method === 'other') {
-    const select = qs('#other_payment_method');
-    window.formasPago
-      .filter(fp => !['01','02','03'].includes(fp.codigo))
-      .forEach(fp => {
-        const opt = document.createElement('option');
-        opt.value = fp.codigo;
-        opt.textContent = `${fp.codigo} – ${fp.descripcion}`;
-        select.appendChild(opt);
+      paymentDetailsContainer.addEventListener('input', (e) => {
+        if (e.target.matches('#monto_recibido')) {
+          const montoRecibido = parseFloat(e.target.value) || 0;
+          const total = parseFloat(qs('#total_view').value) || 0;
+          qs('#cambio_view').textContent = `${(montoRecibido - total).toFixed(2)}`;
+        }
+        if (e.target.matches('#card_referencia, #other_referencia')) {
+          pagoReferenciaInput.value = e.target.value;
+        }
       });
-    select.addEventListener('change', e => {
-      codigoEl.value = e.target.value;
-      const desc = window.formasPago.find(fp=>fp.codigo===e.target.value).descripcion;
-      summaryEl.textContent = `${desc} – $${montoEl.value}`;
-    });
-    qs('#other_referencia').addEventListener('input', e => {
-      refEl.value = e.target.value;
-      summaryEl.textContent += ` (Ref: ${e.target.value})`;
-    });
-  }
-}
+      
+      paymentDetailsContainer.addEventListener('change', (e) => {
+        if (e.target.matches('#other_payment_method')) {
+          pagoCodigoInput.value = e.target.value;
+        }
+      });
 
+      paymentDetailsContainer.addEventListener('click', (e) => {
+        if (e.target.matches('.payment-card-type-btn')) {
+          const cardType = e.target.dataset.cardType;
+          pagoCodigoInput.value = cardType;
+          qsa('.payment-card-type-btn').forEach(btn => btn.classList.remove('bg-blue-200', 'border-blue-400'));
+          e.target.classList.add('bg-blue-200', 'border-blue-400');
+        }
+      });
 
+      document.addEventListener('totalUpdated', (e) => {
+        pagoMontoInput.value = e.detail.total;
+      });
 
-
-
-}
       // ---------- Autocompletar cliente ----------
       const inputDoc = qs('#cliente_numero');
       const statusEl = qs('#cliente-status');

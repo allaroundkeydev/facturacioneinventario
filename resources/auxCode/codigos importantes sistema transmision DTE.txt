@@ -1,0 +1,2539 @@
+routes\web.php:
+<?php
+//routes\web.php
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\EmpresaController;
+use App\Http\Controllers\SucursalController;
+use App\Http\Controllers\CajaController;
+use App\Http\Controllers\DTE\ClienteController;
+use App\Http\Controllers\CajeroController;
+use App\Http\Controllers\AsignacionController;
+use App\Http\Controllers\DTE\DashboardController;
+use App\Http\Controllers\DTE\FacturaController;
+use App\Http\Controllers\MunicipioController;
+use App\Http\Controllers\ActividadController;
+use App\Http\Controllers\ProductoController;
+use App\Http\Controllers\ServicioController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+*/
+
+// Pública
+Route::get('/', fn() => view('welcome'));
+
+// Auth (Jetstream/Breeze)
+require __DIR__.'/auth.php';
+
+// ——————————————————————————————————————————————————————————————————————————————
+// 1) Ruta Dashboard global (todos los autenticados la veían antes)
+// ——————————————————————————————————————————————————————————————————————————————
+Route::get('/dashboard', function(){
+    return view('dashboard');
+})->middleware(['auth','verified'])
+  ->name('dashboard');
+
+// ——————————————————————————————————————————————————————————————————————————————
+// 2) Rutas que requieren login y email verificado
+// ——————————————————————————————————————————————————————————————————————————————
+Route::middleware(['auth','verified'])->group(function(){
+
+    // PERFIL
+    Route::get('/profile', [ProfileController::class, 'edit'])
+         ->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])
+         ->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])
+         ->name('profile.destroy');
+
+    // EMISIÓN DTE (admin y cajero)
+// Mostrar formulario de selección de tipo DTE
+Route::get('/dte/tipo', [App\Http\Controllers\DTE\DashboardController::class, 'selectTipo'])
+     ->name('dte.tipo.select')
+     ->middleware(['auth','verified']);
+
+// Enviar selección y redirigir al formulario concreto
+Route::post('/dte/tipo', [App\Http\Controllers\DTE\DashboardController::class, 'handleTipo'])
+     ->name('dte.tipo.handle')
+     ->middleware(['auth','verified']);
+
+
+
+    Route::get('/dte',        [DashboardController::class,'dteIndex'])
+         ->name('dte.index');
+// Rutas de FacturaController
+         Route::get('/dte/create', [\App\Http\Controllers\DTE\FacturaController::class, 'create'])
+     ->name('dte.create')
+     ->middleware(['auth','verified']);
+Route::post('/dte', [\App\Http\Controllers\DTE\FacturaController::class, 'store'])
+     ->name('dte.store')
+     ->middleware(['auth','verified']);
+
+     // formulario específico CCF
+Route::get('/dte/ccf/create', [\App\Http\Controllers\DTE\FacturaController::class, 'createCcf'])
+    ->name('dte.ccf.create')
+    ->middleware(['auth','verified']);
+
+    // Formulario CCF (preparar / crear)
+Route::get('/dte/ccf/create', [\App\Http\Controllers\DTE\FacturaController::class, 'createCcf'])
+    ->name('dte.ccf.create')
+    ->middleware(['auth','verified']);
+
+// Guardar CCF (preparar DTE y guardar en BD)
+Route::post('/dte/ccf', [\App\Http\Controllers\DTE\FacturaController::class, 'storeCcf'])
+    ->name('dte.ccf.store')
+    ->middleware(['auth','verified']);
+
+
+// Ruta para buscar cliente por DUI/NIT (GET) usando query param ?doc=...
+    // Ejemplo: /clientes/buscar?doc=04319321-6
+    Route::get('/clientes/buscar', [\App\Http\Controllers\DTE\ClienteController::class, 'buscar'])
+         ->name('clientes.buscar')
+         ->middleware(['auth','verified']);
+
+          // Ruta para crear cliente vía AJAX/form normal (POST).
+    // Si la petición es AJAX/JSON, el controlador responde JSON (201 + cliente creado).
+    Route::post('/clientes', [\App\Http\Controllers\DTE\ClienteController::class, 'store'])
+         ->name('clientes.store')
+         ->middleware(['auth','verified']);
+
+
+// Rutas para enviar DTEs
+    Route::post('/dte/enviar/{dte}', [\App\Http\Controllers\DTE\EnviarDteController::class, 'enviar'])
+         ->name('dte.enviar')
+         ->middleware(['auth','verified']);
+    Route::post('/dte/enviar-pendientes', [\App\Http\Controllers\DTE\EnviarDteController::class, 'enviarPendientes'])
+         ->name('dte.enviar-pendientes')
+         ->middleware(['auth','verified']);
+
+
+    // ————————————————————————————————————————————————————————————————————————
+    // 3) Rutas de Administrador (rol `admin`)
+    // ————————————————————————————————————————————————————————————————————————
+    Route::middleware('admin')->group(function(){
+        // CRUD Empresa + Emisor DTE
+        Route::get('/empresa',                 [EmpresaController::class, 'show'])
+             ->name('empresa.show');
+        Route::get('/empresa/create',          [EmpresaController::class, 'create'])
+             ->name('empresa.create');
+        Route::post('/empresa',                [EmpresaController::class, 'store'])
+             ->name('empresa.store');
+        Route::get('/empresa/edit',            [EmpresaController::class, 'edit'])
+             ->name('empresa.edit');
+        Route::put('/empresa',                 [EmpresaController::class, 'update'])
+             ->name('empresa.update');
+        Route::get('/empresa/panel',           [EmpresaController::class, 'panel'])
+             ->name('empresa.panel');
+
+        Route::get('/empresa/emisor',          [EmpresaController::class, 'showEmisor'])
+             ->name('empresa.emisor.show');
+        Route::post('/empresa/emisor',         [EmpresaController::class, 'storeEmisor'])
+             ->name('empresa.emisor.store');
+        Route::get('/empresa/emisor/edit',     [EmpresaController::class, 'editEmisor'])
+             ->name('empresa.emisor.edit');
+        Route::put('/empresa/emisor',          [EmpresaController::class, 'updateEmisor'])
+             ->name('empresa.emisor.update');
+
+        // CRUD Sucursales, Cajas, Clientes, Cajeros
+        Route::resource('sucursales', SucursalController::class)
+             ->except(['show']);
+        Route::resource('cajas',      CajaController::class)
+             ->except(['show']);
+        Route::resource('clientes', ClienteController::class)
+     ->except(['show']);
+        Route::resource('cajeros',    CajeroController::class)
+             ->except(['show']);
+
+        // Asignaciones cajero↔caja
+        Route::post('cajas/{caja}/asignar',    [AsignacionController::class,'store'])
+             ->name('cajas.asignar');
+        Route::post('cajas/{caja}/desasignar', [AsignacionController::class,'destroy'])
+             ->name('cajas.desasignar');
+
+        // CRUD Asignaciones
+    Route::resource('asignaciones', AsignacionController::class)
+         ->only(['index','create','store','destroy']);
+
+         //CRUD Productos y Servicios
+
+         Route::resource('productos', ProductoController::class)
+     ->except(['show']);
+
+Route::resource('servicios', ServicioController::class)
+     ->except(['show']);
+
+     Route::post('cajas/{caja}/cerrar', [AsignacionController::class, 'cerrar'])
+     ->name('cajas.cerrar');
+    });
+
+    // ————————————————————————————————————————————————————————————————————————
+    // 4) Endpoints auxiliares
+    // ————————————————————————————————————————————————————————————————————————
+    Route::get('/municipios/{departamento}', [MunicipioController::class, 'getByDepartamento']);
+    Route::get('/actividades',               [ActividadController::class, 'suggest']);
+
+});
+---
+<?php
+//app\Http\Controllers\DTE\FacturaController.php
+namespace App\Http\Controllers\DTE;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
+use App\Models\TipoDocumento;
+use App\Models\Cliente;
+use App\Models\Sucursal;
+use App\Models\Caja;
+use App\Models\Producto;
+use App\Models\Dte;
+use App\Services\DteBuilder;
+use App\Services\CcfService;
+use App\Helpers\DteHelper;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
+use Exception;
+
+class FacturaController extends Controller
+{
+    /**
+     * Mostrar formulario de creación de factura (DTE tipo Factura).
+     */
+    public function create(Request $request): View
+    {
+        $empresa = auth()->user()->empresa;
+        if (! $empresa) {
+            return redirect()->route('empresa.create')->with('error', 'Debe registrar su empresa primero.');
+        }
+
+        // tipo (código MH) pasado como query param ?tipo=01
+        $tipoCodigo = $request->query('tipo');
+        $tipo = $tipoCodigo ? TipoDocumento::where('codigo', $tipoCodigo)->first() : null;
+
+        // Cargar datos necesarios para el formulario
+        $clientes   = Cliente::orderBy('nombre')->get();
+        $sucursales = $empresa->sucursales()->orderBy('descripcion')->get();
+        $cajas      = Caja::whereIn('sucursal_id', $sucursales->pluck('id')->toArray())->get();
+        $productos  = Producto::where('empresa_id', $empresa->id)->orderBy('descripcion')->get();
+
+        return view('dte.factura.create', compact(
+            'tipo', 'clientes', 'sucursales', 'cajas', 'productos', 'empresa'
+        ));
+    }
+
+    /**
+     * Guardar (preparar) el DTE — aquí únicamente validamos y guardamos el JSON en la BD.
+     * La firma / envío a Hacienda lo implementaremos separadamente.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        $empresa = auth()->user()->empresa;
+        if (! $empresa) {
+            return redirect()->route('empresa.create')->with('error', 'Empresa no configurada.');
+        }
+
+        // Validación básica (ajusta según tu schema real)
+        $validated = $request->validate([
+            'tipo' => ['required', 'string'],
+            'cliente_numero' => ['required', 'string'],
+            'sucursal_id' => ['nullable', 'integer', 'exists:sucursales,id'],
+            'caja_id' => ['nullable', 'integer', 'exists:cajas,id'],
+            'iva' => ['nullable', 'numeric'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.descripcion' => ['required', 'string'],
+            'items.*.cantidad' => ['required', 'numeric', 'min:0.01'],
+            'items.*.precio' => ['required', 'numeric', 'min:0'],
+            // Campos del receptor (hidden inputs del formulario)
+            'receptor.tipoDocumento' => ['nullable', 'string'],
+            'receptor.numDocumento' => ['nullable', 'string'],
+            'receptor.nrc' => ['nullable', 'string'],
+            'receptor.nombre' => ['nullable', 'string'],
+            'receptor.codActividad' => ['nullable', 'string'],
+            'receptor.descActividad' => ['nullable', 'string'],
+            'receptor.direccion.departamento' => ['nullable', 'string'],
+            'receptor.direccion.municipio' => ['nullable', 'string'],
+            'receptor.direccion.complemento' => ['nullable', 'string'],
+            'receptor.telefono' => ['nullable', 'string'],
+            'receptor.correo' => ['nullable', 'string'],
+        ]);
+
+        // Evitar faltas si receptor no existe en validated
+        $validatedReceptor = $validated['receptor'] ?? [];
+
+        // Buscar cliente por DUI/NIT (si existe)
+        $cliente = Cliente::where('nit', $validated['cliente_numero'])
+                    ->orWhere('dui', $validated['cliente_numero'])
+                    ->first();
+
+        // Construir estructura DTE usando DteBuilder
+        $builder = new DteBuilder();
+
+        // 1) EMISOR: setear desde la empresa y asegurar códigos MH por defecto
+        $builder->setEmisor($empresa);
+
+        // Asegurar codEstableMH y codPuntoVentaMH (valores requeridos por validate())
+        $codEstableMH = $empresa->cod_estable_mh ?? $empresa->codEstableMH ?? 'M001';
+        $codPuntoVentaMH = $empresa->cod_punto_venta_mh ?? $empresa->codPuntoVentaMH ?? 'P001';
+
+        // Re-aplicar defaults mínimos para el emisor
+        $builder->setEmisor([
+            'codEstableMH'     => (string) $codEstableMH,
+            'codPuntoVentaMH'  => (string) $codPuntoVentaMH,
+            'nit'              => $empresa->api_user ?? $empresa->nit,
+            'nombre'           => $empresa->razon_social ?? ($empresa->nombre_comercial ?? 'EMISOR'),
+            'descActividad'    => (string) ($empresa->desc_actividad ?? '')
+        ]);
+
+        // 2) RECEPTOR: tomamos los valores directamente de la tabla clientes si existe,
+        //    sino usamos los valores proporcionados por el formulario (validatedReceptor)
+        $numDocumento = $validated['cliente_numero'];
+
+        // Determinar tipo documento (si proviene del formulario prefierelo;
+        // si no, tomar tipo_documento de la tabla clientes o inferir por longitud)
+        if (!empty($validatedReceptor['tipoDocumento'])) {
+            $receptorTipo = $validatedReceptor['tipoDocumento'];
+        } elseif ($cliente && !empty($cliente->tipo_documento)) {
+            $receptorTipo = $cliente->tipo_documento;
+        } else {
+            // Inferir: NIT suele tener más de 9 dígitos (ajusta según tu lógica)
+            $digits = preg_replace('/\D/', '', (string)$numDocumento);
+            $receptorTipo = (strlen($digits) > 9) ? '02' : '13';
+        }
+
+        // Si es DUI (13) intentamos formatearlo con el guion
+        if ($receptorTipo === '13') {
+            $digits = preg_replace('/\D+/', '', (string)$numDocumento);
+            if (strlen($digits) === 9) {
+                $numDocumento = substr($digits, 0, 8) . '-' . substr($digits, 8, 1);
+            }
+        }
+
+        // Nombre del receptor: priorizar la columna nombre de clientes si existe,
+        // luego el campo del formulario, sino un fallback seguro.
+        $receptorNombre = $cliente?->nombre ?? ($validatedReceptor['nombre'] ?? null);
+        if (empty($receptorNombre)) {
+            $receptorNombre = ($receptorTipo === '13') ? 'CONSUMIDOR FINAL' : 'CLIENTE';
+        }
+
+        // --- Aquí: tomar municipio/departamento/complemento DIRECTAMENTE de la tabla clientes ---
+        if ($cliente) {
+    // pasa un array limpio con toArray() para evitar problemas de cast
+    $builder->setReceptor($cliente->toArray(), $validated['cliente_numero']);
+} else {
+    // Si no existe cliente, se usa el bloque con los datos del formulario
+    $builder->setReceptor((object)[
+        'nrc' => $validated['receptor']['nrc'] ?? null,
+        'nombre' => $validated['receptor']['nombre'] ?? null,
+        'municipio' => $validated['receptor']['direccion']['municipio'] ?? null,
+        'departamento' => $validated['receptor']['direccion']['departamento'] ?? null,
+        'direccion' => $validated['receptor']['direccion']['complemento'] ?? null,
+        'telefono' => $validated['receptor']['telefono'] ?? null,
+        'correo' => $validated['receptor']['correo'] ?? null,
+        'cod_actividad' => $validated['receptor']['codActividad'] ?? null,
+        'desc_actividad' => $validated['receptor']['descActividad'] ?? null,
+    ], $validated['cliente_numero']);
+}
+
+
+        // --- obtener receptor validado (si existe) ---
+$validatedReceptor = $validated['receptor'] ?? [];
+
+// Si $cliente existe (consulta previa), preferir sus campos.
+// Si no, usar lo enviado por formulario en receptor.direccion OR receptor.{departamento,municipio,complemento}
+$dirDepartamento = $cliente->departamento ?? ($validatedReceptor['direccion']['departamento'] ?? ($validatedReceptor['departamento'] ?? null));
+$dirMunicipio    = $cliente->municipio    ?? ($validatedReceptor['direccion']['municipio']    ?? ($validatedReceptor['municipio'] ?? null));
+$dirComplemento  = $cliente->complemento  ?? ($validatedReceptor['direccion']['complemento']  ?? ($validatedReceptor['complemento'] ?? null));
+
+// Normalizar strings vacíos a null (opcional, según schema)
+$dirDepartamento = $dirDepartamento === '' ? null : $dirDepartamento;
+$dirMunicipio    = $dirMunicipio === '' ? null : $dirMunicipio;
+$dirComplemento  = $dirComplemento === '' ? null : $dirComplemento;
+
+// Construir payload del receptor (usa los valores calculados)
+$receptorPayload = [
+    'tipoDocumento' => $receptorTipo,
+    'numDocumento'  => $numDocumento,
+    'nrc'           => $cliente->nrc ?? ($validatedReceptor['nrc'] ?? null),
+    'nombre'        => $receptorNombre,
+    'codActividad'  => $cliente->cod_actividad ?? ($validatedReceptor['codActividad'] ?? null),
+    'descActividad' => $cliente->desc_actividad ?? ($validatedReceptor['descActividad'] ?? null),
+    'direccion' => [
+        'departamento' => $dirDepartamento,
+        'municipio'    => $dirMunicipio,
+        'complemento'  => $dirComplemento,
+    ],
+    'telefono' => $cliente->telefono ?? ($validatedReceptor['telefono'] ?? null),
+    'correo'   => $cliente->correo ?? ($validatedReceptor['correo'] ?? null),
+];
+
+        // Log resumido para depuración (puedes quitar luego)
+        Log::info('DTE -> receptorPayload (directo desde clientes o fallback):', [
+            'cliente_id' => $cliente?->id ?? null,
+            'receptorPayload' => $receptorPayload,
+        ]);
+
+        // Setear receptor en el builder
+        $builder->setReceptor($receptorPayload, $numDocumento);
+
+        // 3) Ítems: preparar y setear
+        $items = [];
+        foreach ($validated['items'] as $item) {
+            $items[] = [
+                'descripcion' => $item['descripcion'],
+                'cantidad' => $item['cantidad'],
+                'precio' => $item['precio'],
+            ];
+        }
+        $ivaPct = floatval($validated['iva'] ?? 0);
+        $builder->setItems($items, $ivaPct);
+
+        // 4) Identificación: tipoDte, numeroControl, codigoGeneracion y ambiente
+        $tipoPad = str_pad(ltrim($validated['tipo'], '0'), 2, '0', STR_PAD_LEFT);
+        $numeroControl = 'DTE-' . $tipoPad . '-' .
+                         ($codEstableMH ?? 'M001') .
+                         ($codPuntoVentaMH ?? 'P001') . '-' .
+                         str_pad(rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
+
+        $codigoGeneracion = DteHelper::uuidV4();
+
+        $builder->setIdentificacion([
+            'tipoDte' => $tipoPad,
+            'numeroControl' => $numeroControl,
+            'codigoGeneracion' => $codigoGeneracion,
+            // dejamos ambiente por defecto (ej. "00") a menos que quieras otra cosa
+            'ambiente' => $builder->build()['identificacion']['ambiente'] ?? '00',
+        ]);
+
+        // DEBUG log resumido
+        Log::info('Preparando DTE - resumen', [
+            'usuario_id' => auth()->id(),
+            'empresa_id' => $empresa->id ?? null,
+            'tipoDte' => $tipoPad,
+            'numeroControl' => $numeroControl,
+            'codigoGeneracion' => $codigoGeneracion,
+            'items_count' => count($items),
+            'receptor_tipo' => $receptorPayload['tipoDocumento'],
+            'receptor_nombre' => $receptorPayload['nombre'],
+            'emisor_codEstableMH' => $codEstableMH,
+            'emisor_codPuntoVentaMH' => $codPuntoVentaMH,
+        ]);
+
+        // Validar antes de construir JSON final
+        $validation = $builder->validate();
+        if ($validation !== true) {
+            $msg = 'DTE inválido. Campos faltantes o inconsistentes: ' . implode(', ', $validation);
+            Log::warning('DTE inválido antes de guardar', ['errors' => $validation, 'payload' => $receptorPayload]);
+            return redirect()->back()->withInput()->with('error', $msg);
+        }
+
+        // Construir el array final del DTE
+        $jsonDte = $builder->build();
+
+        // Guardar DTE en la tabla dtes (estado pendiente)
+        try {
+            $dte = Dte::create([
+                'usuario_id' => auth()->id(),
+                'dte_json' => $jsonDte, // Dte model tiene $casts para array
+                'respuesta_json' => null,
+                'codigo_generacion' => $codigoGeneracion,
+                'estado' => 'PENDIENTE',
+            ]);
+            Log::info("DTE guardado id={$dte->id} usuario_id=" . auth()->id());
+        } catch (\Throwable $e) {
+            Log::error('Error creando DTE: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return redirect()->back()->withInput()->with('error', 'Error interno al guardar DTE. Revisa logs.');
+        }
+
+        return redirect()->route('dte.index')->with('success', 'DTE creado (pendiente firma/envío).');
+    }
+
+    // --- Mostrar formulario CCF (reusa la vista factura/create que ya tienes)
+    // --- Mostrar formulario CCF (reusa la vista factura/create que ya tienes)
+// --- Mostrar formulario CCF (reusa la vista factura/create que ya tienes)
+    public function createCcf(Request $request)
+    {
+        $user = Auth::user();
+        $empresa = $user->empresa ?? null;
+
+        $sucursales = $empresa ? Sucursal::where('empresa_id', $empresa->id)->get() : collect();
+        // OJO: no buscar cajas por empresa_id directamente si tu modelo está por sucursal.
+        // mejor obtener cajas por sucursal list:
+        $cajas = collect();
+        if ($empresa) {
+            $sucursalesIds = $sucursales->pluck('id')->toArray();
+            if (!empty($sucursalesIds)) {
+                $cajas = \App\Models\Caja::whereIn('sucursal_id', $sucursalesIds)->get();
+            }
+        }
+
+        $tipo = TipoDocumento::where('codigo', '03')->first();
+
+        return view('dte.factura.create', compact('tipo', 'sucursales', 'cajas'));
+    }
+
+    // --- Guardar CCF: delegar en CcfService
+    public function storeCcf(Request $request)
+    {
+        $user = Auth::user();
+        $empresa = $user->empresa ?? null;
+        if (! $empresa) {
+            return back()->with('error', 'Empresa emisora no configurada para este usuario.');
+        }
+
+        // Reglas básicas (suficientes para crear el CCF)
+        $rules = [
+            'receptor.numDocumento' => ['required','string'],
+            'receptor.nombre' => ['nullable','string'],
+            'items' => ['required','array','min:1'],
+            'items.*.cantidad' => ['required','numeric','min:0.00000001'],
+            'items.*.precio' => ['required','numeric'],
+            'iva' => ['nullable','numeric'],
+        ];
+
+        $v = Validator::make($request->all(), $rules);
+        if ($v->fails()) {
+            return back()->withErrors($v)->withInput();
+        }
+
+        $input = $request->all();
+
+        // instanciar servicio CCF con la empresa actual
+        $ccfService = new \App\Services\CcfService($empresa);
+
+        try {
+            $dteModel = $ccfService->createFromArray($input, $user);
+        } catch (Exception $e) {
+            \Log::error('Error creando CCF: '.$e->getMessage());
+            return back()->withInput()->with('error', 'Error creando CCF: ' . $e->getMessage());
+        }
+
+        return redirect()->route('dte.index')->with('success', 'Comprobante CCF preparado correctamente (ID: '.$dteModel->id.').');
+    }
+}
+--
+<?php
+//app\Services\CcfDteService.php
+namespace App\Services;
+
+use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Token;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+use Exception;
+
+class CcfDteService
+{
+    protected string $haciendaUrl;
+    protected string $signerUrl;
+
+    public function __construct()
+    {
+        $this->haciendaUrl = rtrim(config('services.dte.hacienda_url', env('DTE_HACIENDA_URL', 'https://apitest.dtes.mh.gob.sv')), '/');
+        $signer = config('services.dte.signer_url', env('DTE_SIGNER_URL', 'http://localhost:8113'));
+        $this->signerUrl = rtrim($signer, '/');
+    }
+
+    /**
+     * Emite (firma + envía) un DTE CCF (tipo 03) y actualiza la fila correspondiente.
+     *
+     * @param Dte $dte
+     * @return array
+     * @throws Exception
+     */
+    public function emitir(Dte $dte): array
+    {
+        // 1) Cargar user y empresa emisora
+        $user = $dte->usuario_id ? \App\Models\User::find($dte->usuario_id) : null;
+        if (! $user) {
+            throw new Exception("No se encontró el usuario asociado al DTE (usuario_id={$dte->usuario_id}).");
+        }
+
+        $empresa = $user->empresa ?? null;
+        if (! $empresa instanceof Empresa) {
+            throw new Exception('Empresa emisora no encontrada para el usuario.');
+        }
+
+        // 2) Obtener token válido para la empresa
+        $token = $this->getTokenForEmpresa($empresa);
+
+        // 3) Preparar DTE (array)
+        $dteArray = $dte->dte_json;
+        if (! is_array($dteArray)) {
+            throw new Exception('El campo dte_json del DTE no es un array válido.');
+        }
+
+        // 3.1 Sanear/normalizar para CCF justo antes de firmar/enviar
+        // (evita depender de otros puntos de la app)
+        $dteArray = $this->sanitizeForCcf($dteArray);
+
+        // Log resumido del DTE que vamos a firmar (no loguear la firma completa)
+        Log::info('DTE (CCF) previo a firmar - resumen: ' . json_encode([
+            'tipoDte' => $dteArray['identificacion']['tipoDte'] ?? null,
+            'version' => $dteArray['identificacion']['version'] ?? null,
+            'codigoGeneracion' => $dteArray['identificacion']['codigoGeneracion'] ?? null,
+            'emisor_nit' => $dteArray['emisor']['nit'] ?? null,
+            'receptor_nit' => $dteArray['receptor']['nit'] ?? null,
+            'resumen_subTotal' => $dteArray['resumen']['subTotal'] ?? null,
+            'resumen_ivaPerci1' => $dteArray['resumen']['ivaPerci1'] ?? null,
+            'items_count' => count($dteArray['cuerpoDocumento'] ?? []),
+        ]));
+
+        // 4) Firmar en Docker
+        $jwtFirmado = $this->signWithDocker($empresa, $dteArray);
+
+        if (empty($jwtFirmado)) {
+            throw new Exception('Firma vacía: el firmador no devolvió contenido válido.');
+        }
+
+        // 5) Inyectar firma dentro del documento DTE
+        $dteArray['firmaElectronica'] = $jwtFirmado;
+
+        // 6) Preparar paquete para Hacienda
+        $paquete = [
+            'ambiente'         => $dteArray['identificacion']['ambiente'] ?? null,
+            'idEnvio'          => time(),
+            'version'          => (int)($dteArray['identificacion']['version'] ?? 3),
+            'tipoDte'          => $dteArray['identificacion']['tipoDte'] ?? '03',
+            'documento'        => $jwtFirmado,
+        ];
+
+        Log::info('DTE -> Envío a Hacienda (resumen payload): ' . json_encode([
+            'idEnvio' => $paquete['idEnvio'],
+            'tipoDte' => $paquete['tipoDte'],
+            'ambiente'=> $paquete['ambiente'],
+            'documento_length' => strlen($jwtFirmado)
+        ]));
+
+        // 7) Envío a Hacienda
+        $urlSend = $this->haciendaUrl . '/fesv/recepciondte/';
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->timeout(90)
+            ->post($urlSend, $paquete);
+
+        $httpCode = $response->status();
+        $respBody = $response->body();
+        $respJson = null;
+        try {
+            $respJson = $response->json();
+        } catch (\Throwable $ex) {
+            Log::warning("No se pudo parsear JSON de respuesta Hacienda: " . $ex->getMessage());
+        }
+
+        Log::info("Respuesta Hacienda HTTP {$httpCode} - body: " . substr($respBody, 0, 4000));
+
+        // 8) Guardar respuesta en DTE
+        $dte->respuesta_json = $respJson ?? $respBody;
+        $dte->estado = $respJson['estado'] ?? ($httpCode === 200 ? 'PROCESADO' : 'ERROR_' . $httpCode);
+        $dte->codigo_generacion = $respJson['codigoGeneracion'] ?? $dte->codigo_generacion;
+        $dte->save();
+
+        if ($httpCode !== 200) {
+            throw new Exception("Hacienda devolvió HTTP {$httpCode}: " . substr($respBody, 0, 2000));
+        }
+
+        return [
+            'http_code' => $httpCode,
+            'estado'    => $dte->estado,
+            'codigo'    => $dte->codigo_generacion,
+            'response'  => $respJson ?? $respBody,
+        ];
+    }
+
+    /**
+     * Sanitiza un array DTE para cumplir el esquema CCF (v3 - tipo 03)
+     */
+    protected function sanitizeForCcf(array $dte): array
+    {
+        // Forzar identificacion CCF V3
+        $dte['identificacion']['version'] = 3;
+        $dte['identificacion']['tipoDte'] = '03';
+        // asegurar ambient/fechas mínimos
+        $dte['identificacion']['fecEmi'] = $dte['identificacion']['fecEmi'] ?? Carbon::now()->format('Y-m-d');
+        $dte['identificacion']['horEmi'] = $dte['identificacion']['horEmi'] ?? Carbon::now()->format('H:i:s');
+
+        // Emisor: asegurar nombreComercial si falta
+        if (empty($dte['emisor']['nombreComercial'])) {
+            $dte['emisor']['nombreComercial'] = $dte['emisor']['nombre'] ?? 'EMISOR';
+        }
+        // Asegurar codEstableMH / codPuntoVentaMH (placeholders si falta)
+        $dte['emisor']['codEstableMH'] = $dte['emisor']['codEstableMH'] ?? 'M001';
+        $dte['emisor']['codPuntoVentaMH'] = $dte['emisor']['codPuntoVentaMH'] ?? 'P001';
+
+        // Receptor: normalizar. Aceptamos numDocumento/tipoDocumento en entrada,
+        // pero HACIENDA exige 'nit' y 'nombreComercial' y 'nrc' con formato correcto.
+        $r = $dte['receptor'] ?? [];
+
+        // mapear numDocumento -> nit
+        $rawNit = $r['nit'] ?? $r['numDocumento'] ?? $r['num_documento'] ?? null;
+        $nitDigits = $rawNit ? preg_replace('/\D+/', '', (string)$rawNit) : '';
+
+        $r['nit'] = $nitDigits ?: ''; // dejar string (vacío marcará error en validación hacienda si realmente falta)
+        // nombreComercial obligatorio: fallback a nombre o 'CLIENTE'
+        $r['nombreComercial'] = $r['nombreComercial'] ?? $r['nombre'] ?? $r['razon_social'] ?? 'CLIENTE';
+        // nombre
+        $r['nombre'] = $r['nombre'] ?? $r['nombreComercial'];
+
+        // nrc: normalizar a solo dígitos (Hacienda espera formato particular; ajusta si tienes reglas)
+        $nrcRaw = $r['nrc'] ?? null;
+        $nrcDigits = $nrcRaw ? preg_replace('/\D+/', '', (string)$nrcRaw) : '';
+        if ($nrcDigits === '') {
+            // placeholder seguro: 8 ceros (mejor si tienes reglas reales)
+            $nrcDigits = str_repeat('0', 8);
+        } elseif (strlen($nrcDigits) > 8) {
+            $nrcDigits = substr($nrcDigits, 0, 8);
+        }
+        $r['nrc'] = $nrcDigits;
+
+        // eliminar campos no permitidos por CCF
+        unset($r['numDocumento'], $r['num_documento'], $r['tipoDocumento'], $r['tipo_documento']);
+
+        $dte['receptor'] = $r;
+
+        // Items: eliminar ivaItem si existe y campos prohibidos
+        if (!empty($dte['cuerpoDocumento']) && is_array($dte['cuerpoDocumento'])) {
+            foreach ($dte['cuerpoDocumento'] as $k => $it) {
+                if (isset($dte['cuerpoDocumento'][$k]['ivaItem'])) {
+                    unset($dte['cuerpoDocumento'][$k]['ivaItem']);
+                }
+                if (isset($dte['cuerpoDocumento'][$k]['totalIva'])) {
+                    unset($dte['cuerpoDocumento'][$k]['totalIva']);
+                }
+            }
+        }
+
+        // Resumen: eliminar totalIva si existe, asegurar ivaPerci1
+        if (isset($dte['resumen']['totalIva'])) {
+            unset($dte['resumen']['totalIva']);
+        }
+
+        $res = $dte['resumen'] ?? [];
+        if (! array_key_exists('ivaPerci1', $res)) {
+            // intentar calcular ivaPerci1 a partir de totalPagar - subTotal (si posible)
+            $sub = floatval($res['subTotal'] ?? $res['subTotalVentas'] ?? 0);
+            $total = floatval($res['totalPagar'] ?? 0);
+            $ivaCalc = round(max(0, $total - $sub), 2);
+            $dte['resumen']['ivaPerci1'] = $ivaCalc;
+        }
+
+        // asegurar subTotal y totalPagar mínimos
+        $dte['resumen']['subTotal'] = $dte['resumen']['subTotal'] ?? ($dte['resumen']['subTotalVentas'] ?? 0);
+        $dte['resumen']['totalPagar'] = $dte['resumen']['totalPagar'] ?? $dte['resumen']['subTotal'];
+
+        return $dte;
+    }
+
+    /**
+     * Obtiene o solicita token para la empresa.
+     */
+    protected function getTokenForEmpresa(Empresa $empresa): string
+    {
+        $now = Carbon::now();
+        $tokRow = Token::where('empresa_id', $empresa->id)->first();
+
+        if ($tokRow && $tokRow->expire_at && Carbon::parse($tokRow->expire_at)->greaterThan($now)) {
+            Log::info("Token válido encontrado para empresa_id={$empresa->id}");
+            return $tokRow->token;
+        }
+
+        // Solicitar nuevo token
+        $urlAuth = $this->haciendaUrl . '/seguridad/auth/';
+
+        $resp = Http::asForm()
+            ->acceptJson()
+            ->timeout(30)
+            ->post($urlAuth, [
+                'user' => $empresa->api_user,
+                'pwd'  => $empresa->api_password,
+            ]);
+
+        if (! $resp->ok()) {
+            Log::error("Auth HACIENDA falló HTTP {$resp->status()} - body: " . $resp->body());
+            throw new Exception("Auth a Hacienda falló. HTTP {$resp->status()}");
+        }
+
+        $json = $resp->json();
+        if (! isset($json['status']) || strtoupper($json['status']) !== 'OK') {
+            $err = $json['error'] ?? json_encode($json);
+            throw new Exception("Auth rechazado por Hacienda: " . $err);
+        }
+
+        $bearer = $json['body']['token'] ?? null;
+        if (! $bearer) {
+            throw new Exception('No se recibió token en la respuesta de auth.');
+        }
+
+        $token = preg_replace('/^Bearer\s+/i', '', trim($bearer));
+        $expireAt = Carbon::now()->addHours(23)->addMinutes(59)->toDateTimeString();
+
+        $existingToken = Token::where('empresa_id', $empresa->id)->first();
+
+        if ($existingToken) {
+            $existingToken->update([
+                'token' => $token,
+                'expire_at' => $expireAt,
+            ]);
+        } else {
+            Token::create([
+                'empresa_id' => $empresa->id,
+                'token' => $token,
+                'expire_at' => $expireAt,
+            ]);
+        }
+
+        Log::info("Token obtenido y guardado para empresa_id={$empresa->id} (expira: {$expireAt})");
+
+        return $token;
+    }
+
+    /**
+     * Llama al firmador Docker y retorna la firma/resultado.
+     */
+    protected function signWithDocker(Empresa $empresa, array $dteArray): string
+    {
+        $payload = [
+            'nit'         => $empresa->api_user ?? $empresa->nit ?? null,
+            'activo'      => true,
+            'passwordPri' => $empresa->key_password ?? null,
+            'dteJson'     => $dteArray,
+        ];
+
+        $tmp = $payload;
+        unset($tmp['passwordPri']);
+        Log::info('Llamando firmador (docker) - payload summary: ' . json_encode($tmp));
+
+        $urlFirm = $this->signerUrl . '/firmardocumento/';
+        Log::info("Firmador URL utilizada: {$urlFirm}");
+
+        $resp = Http::timeout(60)
+            ->withHeaders([
+                'User-Agent' => 'factura-electronica-client',
+                'Content-Type' => 'application/json',
+            ])
+            ->post($urlFirm, $payload);
+
+        if (! $resp->ok()) {
+            Log::error("Firma falló HTTP {$resp->status()} - body: " . $resp->body());
+            throw new Exception("Firma falló, HTTP {$resp->status()}");
+        }
+
+        $json = $resp->json();
+
+        if (isset($json['body']) && is_string($json['body'])) {
+            return $json['body'];
+        }
+
+        if (is_string($json)) {
+            return $json;
+        }
+
+        throw new Exception('El firmador no devolvió un JWT válido: ' . json_encode($json));
+    }
+}
+---
+<?php
+//app\Services\CcfService.php
+namespace App\Services;
+
+use App\Models\Dte;
+use App\Models\Empresa;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Exception;
+use Carbon\Carbon;
+
+class CcfService
+{
+    protected Empresa $empresa;
+
+    public function __construct(Empresa $empresa)
+    {
+        $this->empresa = $empresa;
+    }
+
+    /**
+     * Construye, valida y crea un registro DTE (tipo 03 - CCF).
+     *
+     * @param array $input  Datos ya validados del request (receptor, items, iva, etc.)
+     * @param \App\Models\User $user  Usuario que crea el DTE
+     * @return Dte
+     * @throws Exception
+     */
+    public function createFromArray(array $input, $user): Dte
+    {
+        // 1) Normalizar receptor
+        $receptor = $input['receptor'] ?? [];
+        // aceptar nit en varios keys por compatibilidad
+        $rawNit = $receptor['nit'] ?? $receptor['numDocumento'] ?? $receptor['num_documento'] ?? $receptor['numDocumento'] ?? null;
+        $nombre = $receptor['nombre'] ?? $receptor['razon_social'] ?? $receptor['nombre_comercial'] ?? null;
+        $nombreComercialIn = $receptor['nombreComercial'] ?? $receptor['nombre_comercial'] ?? null;
+
+        if (empty($rawNit) && empty($nombreComercialIn)) {
+            // NIT puede ser obligatorio en tu flujo CCF; si no lo tienes, exige por política
+            throw new Exception('Para CCF se requiere receptor.nit (o al menos receptor.nombreComercial).');
+        }
+
+        // Normalizar nit: quitar cualquier no-dígito
+        $nitNorm = $rawNit !== null ? preg_replace('/\D/', '', (string)$rawNit) : '';
+        if ($nitNorm === '') {
+            // Si no hay NIT usable, aún permitimos continuar solo si hay nombreComercial:
+            // pero Hacienda exige NIT para CCF. Mejor lanzar error claro.
+            throw new Exception('NIT inválido o vacío para el receptor. Corrija el NIT antes de continuar.');
+        }
+
+        // 2) Normalizar/forzar nrc como string (no null). Hacienda espera string con formato.
+        $nrc = $receptor['nrc'] ?? $receptor['NRC'] ?? null;
+        if (empty($nrc)) {
+            // placeholder aceptable: '00000000' (ajústalo si tu normativa requiere guion)
+            $nrc = '00000000';
+        } else {
+            // quitar espacios y asegurar string
+            $nrc = (string) $nrc;
+        }
+
+        // Forzar nombreComercial: obligatorio en CCF
+        $nombreComercial = $nombreComercialIn ?? $nombre ?? 'N/A';
+
+        // Construcción receptor normalizado, **sin** campos prohibidos como numDocumento o tipoDocumento
+        $receptorNormalized = [
+            'nit' => $nitNorm,
+            'nombreComercial' => $nombreComercial,
+            'nombre' => $nombre ?? $nombreComercial,
+            'nrc' => $nrc,
+            'codActividad' => $receptor['codActividad'] ?? $receptor['cod_actividad'] ?? null,
+            'descActividad' => $receptor['descActividad'] ?? $receptor['desc_actividad'] ?? null,
+            'telefono' => $receptor['telefono'] ?? null,
+            'correo' => $receptor['correo'] ?? null,
+            'direccion' => [
+                'departamento' => $receptor['direccion']['departamento'] ?? ($receptor['departamento'] ?? null),
+                'municipio' => $receptor['direccion']['municipio'] ?? ($receptor['municipio'] ?? null),
+                'complemento' => $receptor['direccion']['complemento'] ?? ($receptor['complemento'] ?? null),
+            ],
+        ];
+
+        // 3) Items: quitar cualquier 'ivaItem' y asegurar 'tributos' sea array (no null)
+        $rawItems = $input['items'] ?? [];
+        if (empty($rawItems) || !is_array($rawItems)) {
+            throw new Exception('Items inválidos para CCF.');
+        }
+
+        $items = [];
+        $subTotal = 0.0;
+        $ivaPct = floatval($input['iva'] ?? 0.0);
+        $calculatedIva = 0.0;
+
+        foreach ($rawItems as $i => $it) {
+    $cantidad = (float)($it['cantidad'] ?? 0);
+    $precio = (float)($it['precio'] ?? 0);
+    $ventaGravada = round($precio * $cantidad, 2);
+
+    // Calcular IVA para resumen (no incluir ivaItem en item)
+    $ivaItem = $ivaPct > 0 ? round($ventaGravada * $ivaPct / 100, 2) : 0.0;
+    $calculatedIva += $ivaItem;
+    $subTotal += $ventaGravada;
+
+    // Asegurar tributos del item (solo si vienen del input y son válidos)
+// 1. INICIALIZAR EL ARRAY DE TRIBUTOS
+    $tributos = [];
+    
+    // 2. AÑADIR IVA (CÓDIGO '20') SI EL ITEM ES GRAVADO
+
+    if ($ventaGravada > 0) {
+        $tributos[] = '20'; 
+    }
+    
+    // 3. AÑADIR OTROS TRIBUTOS ESPECIALES SI VIENEN EN EL INPUT
+    // Tu lógica original se mantiene, pero ahora complementa al IVA.
+    if (!empty($it['tributos']) && is_array($it['tributos'])) {
+        foreach ($it['tributos'] as $trib) {
+            if (in_array($trib, ['51','52','53', /* ...etc */])) {
+                if (!in_array($trib, $tributos)) { // Evitar duplicados
+                    $tributos[] = $trib;
+                }
+            }
+        }
+    }
+
+
+    $item = [
+    'numItem' => $i + 1,
+    'tipoItem' => $it['tipoItem'] ?? 2,
+    'numeroDocumento' => $it['numeroDocumento'] ?? null,
+    'codigo' => $it['codigo'] ?? null,
+    'descripcion' => $it['descripcion'] ?? '',
+    'cantidad' => $cantidad,
+    'uniMedida' => $it['uniMedida'] ?? 59,
+    'precioUni' => round($precio, 2),
+    'montoDescu' => $it['montoDescu'] ?? 0,
+    'ventaNoSuj' => 0,
+    'ventaExenta' => 0,
+    'ventaGravada' => $ventaGravada,
+    'psv' => $it['psv'] ?? 0,
+    'noGravado' => 0,
+    'codTributo' => null,
+];
+
+// Solo añadir tributos si hay alguno válido
+if (!empty($tributos)) {
+    $item['tributos'] = $tributos;
+}
+
+$items[] = $item;
+
+}
+
+        $subTotal = round($subTotal, 2);
+        $calculatedIva = round($calculatedIva, 2);
+
+        // 4) Emisor: tomar desde $this->empresa (asegurar nombreComercial presente)
+        $emisor = [
+            'nit' => $this->empresa->api_user ?? $this->empresa->nit,
+            'nrc' => $this->empresa->nrc ?? null,
+            'nombre' => $this->empresa->razon_social ?? $this->empresa->nombre_comercial ?? null,
+            'codActividad' => $this->empresa->cod_actividad ?? null,
+            'descActividad' => $this->empresa->desc_actividad ?? null,
+            'nombreComercial' => $this->empresa->nombre_comercial ?? $this->empresa->razon_social ?? $this->empresa->nombre ?? 'EMISOR',
+            'tipoEstablecimiento' => $this->empresa->tipo_establecimiento ?? '02',
+            'direccion' => [
+                'departamento' => $this->empresa->departamento ?? null,
+                'municipio' => $this->empresa->municipio ?? null,
+                'complemento' => $this->empresa->direccion ?? null,
+            ],
+            'telefono' => $this->empresa->telefono ?? null,
+            'correo' => $this->empresa->correo ?? null,
+            'codEstableMH' => $this->empresa->cod_estable_mh ?? 'M001',
+            'codEstable' => $this->empresa->cod_estable ?? null,
+            'codPuntoVentaMH' => $this->empresa->cod_punto_venta_mh ?? 'P001',
+            'codPuntoVenta' => $this->empresa->cod_punto_venta ?? null,
+        ];
+
+// Calcular los códigos de tributos únicos de todos los ítems
+$tributosCodes = collect($input['items'])->flatMap(function ($it) {
+    return $it['tributos'] ?? [];
+})->unique()->values()->toArray();
+
+// Asegurar que el tributo "20" esté presente si hay IVA calculado
+if ($calculatedIva > 0 && !in_array('20', $tributosCodes)) {
+    $tributosCodes[] = '20';
+}
+
+// Construir el array de tributos para el resumen
+$tributosResumen = [];
+foreach ($tributosCodes as $codigo) {
+    if ($codigo === '20') {
+        $valor = $calculatedIva; // Usar el IVA calculado
+    } else {
+        // Para otros tributos, calcula el valor adecuado si es necesario
+        // Por ahora, 0.00 como placeholder (debes ajustar si aplican otros tributos)
+        $valor = 0.00;
+    }
+    $tributosResumen[] = [
+        'codigo' => $codigo,
+        'descripcion' => $this->descripcionTributo($codigo),
+        'valor' => $valor,
+    ];
+}
+
+// 5) Resumen: usar ivaPerci1 en 0 cuando se usan tributos
+$resumen = [
+    'totalNoSuj' => 0,
+    'totalExenta' => 0,
+    'totalGravada' => $subTotal,
+    'subTotalVentas' => $subTotal,
+    'descuNoSuj' => 0,
+    'descuExenta' => 0,
+    'descuGravada' => 0,
+    'porcentajeDescuento' => 0,
+    'totalDescu' => 0,
+    'tributos' => $tributosResumen,
+    'subTotal' => $subTotal,
+    'ivaPerci1' => 0.00, // ← DEBE SER 0 cuando se usan tributos
+    'ivaRete1' => 0,
+    'reteRenta' => 0,
+    'montoTotalOperacion' => $subTotal + $calculatedIva,
+    'totalNoGravado' => 0,
+    'totalPagar' => $subTotal + $calculatedIva,
+    'totalLetras' => $this->numeroALetrasInt($subTotal + $calculatedIva),
+    'saldoFavor' => 0,
+    'condicionOperacion' => 1,
+    'pagos' => [
+        [
+            'codigo' => $input['pagos'][0]['codigo'] ?? '03',
+            'montoPago' => $subTotal + $calculatedIva,
+            'referencia' => $input['pagos'][0]['referencia'] ?? '',
+            'plazo' => $input['pagos'][0]['plazo'] ?? null,
+            'periodo' => $input['pagos'][0]['periodo'] ?? null,
+        ]
+    ],
+    'numPagoElectronico' => $input['numPagoElectronico'] ?? null,
+];
+        // 6) Identificacion (version 3, tipoDte 03)
+        $codigoGeneracion = Str::upper(Str::uuid()->toString());
+        $tipoPad = '03';
+        $numeroControl = 'DTE-' . $tipoPad . '-' . ($emisor['codEstableMH'] ?? 'M001') . ($emisor['codPuntoVentaMH'] ?? 'P001') . '-' . str_pad(rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
+
+        $identificacion = [
+    'version' => 3,
+    'ambiente' => config('services.dte.ambiente', '00'),
+    'tipoDte' => '03',
+    'tipoModelo' => 1,
+    'tipoOperacion' => 1,
+    'numeroControl' => $numeroControl,
+    'codigoGeneracion' => $codigoGeneracion,
+    'fecEmi' => Carbon::now()->format('Y-m-d'),
+    'horEmi' => Carbon::now()->format('H:i:s'),
+    'tipoMoneda' => $input['tipoMoneda'] ?? 'USD',
+    // 🔹 El schema lo requiere aunque no haya contingencia
+    'tipoContingencia' => null,
+    'motivoContin' => null,
+];
+
+        // 7) Estructura final DTE para CCF (cumple esquema esperado)
+        $dteArray = [
+            'identificacion' => $identificacion,
+            'documentoRelacionado' => null,
+            'emisor' => $emisor,
+            'receptor' => $receptorNormalized,
+            'otrosDocumentos' => null,
+            'ventaTercero' => null,
+            'cuerpoDocumento' => $items,
+            'resumen' => $resumen,
+            'extension' => $input['extension'] ?? null,
+            'apendice' => $input['apendice'] ?? null,
+        ];
+
+        // 8) Validaciones básicas (si fallan, lanzar Exception con detalles)
+        $errors = $this->validateCcfArray($dteArray);
+        if (!empty($errors)) {
+            Log::warning('Validación CCF fallida', ['errors' => $errors, 'dte' => $dteArray]);
+            throw new Exception('Validación CCF: ' . implode('; ', $errors));
+        }
+
+        // 9) Crear registro DTE en BD (estado CREADO)
+        $dteModel = Dte::create([
+            'usuario_id' => $user->id,
+            'empresa_id' => $this->empresa->id,
+            'tipo' => '03',
+            'codigo_generacion' => $codigoGeneracion,
+            'dte_json' => $dteArray,
+            'estado' => 'CREADO',
+        ]);
+
+        Log::info("CCF creado id={$dteModel->id}, empresa_id={$this->empresa->id}");
+
+        return $dteModel;
+    }
+
+    /**
+     * Validaciones simples para la estructura CCF que exige Hacienda.
+     * Devuelve array de errores (vacío si OK).
+     */
+    protected function validateCcfArray(array $dte): array
+    {
+        $errs = [];
+
+        // identificacion
+        $ident = $dte['identificacion'] ?? [];
+        if (($ident['version'] ?? null) != 3) $errs[] = 'identificacion.version debe ser 3';
+        if (($ident['tipoDte'] ?? null) != '03') $errs[] = 'identificacion.tipoDte debe ser 03';
+
+        // emisor
+        $em = $dte['emisor'] ?? [];
+        foreach (['nit','nombre','codEstableMH','codPuntoVentaMH','nombreComercial'] as $k) {
+            if (empty($em[$k])) $errs[] = "emisor.$k requerido";
+        }
+
+        // receptor: CCF exige nit, nombreComercial, nombre, nrc
+        $r = $dte['receptor'] ?? [];
+        foreach (['nit','nombreComercial','nombre','nrc'] as $k) {
+            if (!isset($r[$k]) || $r[$k] === '' || $r[$k] === null) $errs[] = "receptor.$k requerido";
+        }
+
+        // resumen: ivaPerci1 debe existir (puede ser 0)
+        $res = $dte['resumen'] ?? [];
+        if (!array_key_exists('ivaPerci1', $res)) $errs[] = 'resumen.ivaPerci1 requerido';
+
+        // items: no debe contener ivaItem y tributos debe ser array
+        foreach ($dte['cuerpoDocumento'] ?? [] as $idx => $it) {
+            if (isset($it['ivaItem'])) $errs[] = "cuerpoDocumento.$idx no debe contener ivaItem";
+            if (!array_key_exists('ventaGravada', $it)) $errs[] = "cuerpoDocumento.$idx ventaGravada requerido";
+            if (array_key_exists('tributos', $it) && !is_array($it['tributos'])) $errs[] = "cuerpoDocumento.$idx.tributos debe ser array";
+        }
+
+        return $errs;
+    }
+
+    /**
+     * Convertir subtotal entero a texto mayúsculas (DÓLARES)
+     */
+protected function descripcionTributo(string $codigo): string
+{
+    $map = [
+        '20' => 'Impuesto al Valor Agregado (IVA 13%)',
+        '51' => 'Bebidas Alcohólicas',
+        '52' => 'Cerveza',
+        '53' => 'Productos del Tabaco',
+        '54' => 'Bebidas Carbonatadas o Gaseosas Simples o Endulzadas',
+        '55' => 'Otros Específicos',
+        '58' => 'Alcohol',
+        '77' => 'Importador de Jugos, Néctares, Bebidas con Jugo y Refrescos',
+        '78' => 'Distribuidor de Jugos, Néctares, Bebidas con Jugo y Refrescos',
+        '79' => 'Sobre Llamadas Telefónicas Provenientes del Ext.',
+        '85' => 'Detallista de Jugos, Néctares, Bebidas con Jugo y Refrescos',
+        '86' => 'Fabricante de Preparaciones Concentradas o en Polvo',
+        '91' => 'Fabricante de Jugos, Néctares, Bebidas con Jugo y Refrescos',
+        '92' => 'Importador de Preparaciones Concentradas o en Polvo',
+        'A1' => 'Específicos y Ad-Valorem',
+        'A5' => 'Bebidas Gaseosas, Isotónicas, Deportivas, Fortificantes, Energizantes o Estimulantes',
+        'A7' => 'Alcohol Etílico',
+        'A9' => 'Sacos Sintéticos',
+    ];
+    return $map[$codigo] ?? 'Tributo';
+}
+
+
+    protected function numeroALetrasInt(float $numero): string
+    {
+        if (class_exists(\NumberFormatter::class)) {
+            $formatter = new \NumberFormatter("es", \NumberFormatter::SPELLOUT);
+            $entero = (int) round($numero);
+            $texto = $formatter->format($entero);
+            return strtoupper($texto . ' DÓLARES');
+        }
+        return strtoupper(number_format($numero, 2, '.', ''));
+    }
+}
+---
+<?php
+//app\Services\DteBuilder.php
+namespace App\Services;
+
+use App\Models\Empresa;
+use Carbon\Carbon;
+
+class DteBuilder
+{
+    protected array $dte = [];
+
+    public function __construct()
+    {
+        // estructura base con claves necesarias
+        $this->dte = [
+            'identificacion' => [
+                'version' => null,
+                // Por defecto dejamos "00" si quieres (según tu requisito)
+                'ambiente' => '00',
+                'tipoDte' => '01',
+                'numeroControl' => null,
+                'codigoGeneracion' => null,
+                'tipoModelo' => 1,
+                'tipoOperacion' => 1,
+                'tipoContingencia' => null,
+                'motivoContin' => null,
+                'fecEmi' => Carbon::now()->format('Y-m-d'),
+                'horEmi' => Carbon::now()->format('H:i:s'),
+                'tipoMoneda' => 'USD',
+            ],
+            'documentoRelacionado' => null,
+            'emisor' => [
+                'nit' => null,
+                'nrc' => null,
+                'nombre' => null,
+                'codActividad' => null,
+                'descActividad' => null,
+                'nombreComercial' => null,
+                'tipoEstablecimiento' => '02',
+                'direccion' => [
+                    'departamento' => null,
+                    'municipio' => null,
+                    'complemento' => null,
+                ],
+                'telefono' => null,
+                'correo' => null,
+                'codEstableMH' => null,
+                'codEstable' => null,
+                'codPuntoVentaMH' => null,
+                'codPuntoVenta' => null,
+            ],
+            'receptor' => [
+                'tipoDocumento' => null,
+                'numDocumento' => null,
+                'nrc' => null,
+                'nombre' => null,
+                'codActividad' => null,
+                'descActividad' => null,
+                'direccion' => [
+                    'municipio' => null,
+                    'departamento' => null,
+                    'complemento' => null
+                ],
+                'telefono' => null,
+                'correo' => null,
+            ],
+            'otrosDocumentos' => null,
+            'ventaTercero' => null,
+            'cuerpoDocumento' => [],
+            'resumen' => [],
+            'extension' => [
+                'nombEntrega' => null,
+                'docuEntrega' => null,
+                'nombRecibe' => null,
+                'docuRecibe' => null,
+                'observaciones' => null,
+                'placaVehiculo' => null
+            ],
+            'apendice' => null,
+        ];
+    }
+
+    /**
+ * Forzar/ajustar identificacion (numeroControl, tipoDte, ambiente, version, tipoMoneda, etc.)
+ *
+ * @param array $data
+ * @return $this
+ */
+public function setIdentificacion(array $data): self
+{
+    // Merge conservador: primero merge para no perder campos ya configurados
+    $this->dte['identificacion'] = array_merge($this->dte['identificacion'], $data);
+
+    // Si se indicó tipoDte y es CCF (03) y no se especificó version, forzar version 3
+    $tipo = $this->dte['identificacion']['tipoDte'] ?? null;
+    if ($tipo === '03') {
+        $this->dte['identificacion']['version'] = 3;
+    } else {
+        // Si no es CCF y no existe version, dejarla en 1 por compatibilidad con facturas
+        if (empty($this->dte['identificacion']['version'])) {
+            $this->dte['identificacion']['version'] = 1;
+        }
+    }
+
+    // Asegurar formato de tipoDte como string 2-digits
+    if (!empty($this->dte['identificacion']['tipoDte'])) {
+        $this->dte['identificacion']['tipoDte'] = str_pad((string)$this->dte['identificacion']['tipoDte'], 2, '0', STR_PAD_LEFT);
+    }
+
+    return $this;
+}
+
+
+    /**
+     * Setear emisor desde modelo Empresa o array
+     * @param Empresa|array $empresa
+     */
+    public function setEmisor($empresa): self
+    {
+        if ($empresa instanceof Empresa) {
+            $this->dte['emisor']['nit'] = $empresa->api_user ?? $empresa->nit;
+            $this->dte['emisor']['nrc'] = $empresa->nrc ?? null;
+            $this->dte['emisor']['nombre'] = $empresa->razon_social ?? null;
+            $this->dte['emisor']['codActividad'] = $empresa->cod_actividad ?? null;
+            $this->dte['emisor']['descActividad'] = $empresa->desc_actividad ?? null;
+            $this->dte['emisor']['nombreComercial'] = $empresa->nombre_comercial ?? null;
+            $this->dte['emisor']['tipoEstablecimiento'] = $empresa->tipo_establecimiento ?? $this->dte['emisor']['tipoEstablecimiento'];
+            $this->dte['emisor']['direccion'] = [
+                'departamento' => $empresa->departamento ?? null,
+                'municipio' => $empresa->municipio ?? null,
+                'complemento' => $empresa->direccion ?? null,
+            ];
+            $this->dte['emisor']['telefono'] = $empresa->telefono ?? null;
+            $this->dte['emisor']['correo'] = $empresa->correo ?? null;
+            $this->dte['emisor']['codEstableMH'] = $empresa->cod_estable_mh ?? $this->dte['emisor']['codEstableMH'];
+            $this->dte['emisor']['codEstable'] = $empresa->cod_estable ?? null;
+            $this->dte['emisor']['codPuntoVentaMH'] = $empresa->cod_punto_venta_mh ?? $this->dte['emisor']['codPuntoVentaMH'];
+            $this->dte['emisor']['codPuntoVenta'] = $empresa->cod_punto_venta ?? null;
+        } elseif (is_array($empresa)) {
+            $this->dte['emisor'] = array_merge($this->dte['emisor'], $empresa);
+        }
+        return $this;
+    }
+
+    /**
+     * Setear receptor (cliente). $receptor puede ser array o stdClass o Eloquent Model
+     */
+public function setReceptor($receptor, ?string $numDocumento = null): self
+{
+    // Si es un Eloquent Model, conviértelo con toArray() (más fiable)
+    if ($receptor instanceof \Illuminate\Database\Eloquent\Model) {
+        $receptor = $receptor->toArray();
+    }
+
+    // Si es objeto stdClass, transformarlo a array
+    if (is_object($receptor)) {
+        $receptor = (array) $receptor;
+    }
+
+    if (is_array($receptor)) {
+        // Normalizar nombres que pueden venir de distintos lugares
+        $nombre = $receptor['nombre'] 
+                  ?? $receptor['razon_social'] 
+                  ?? $receptor['nombre_comercial'] 
+                  ?? null;
+
+        $nrc = $receptor['nrc'] ?? null;
+        $cod_actividad = $receptor['cod_actividad'] ?? $receptor['codActividad'] ?? null;
+        $desc_actividad = $receptor['desc_actividad'] ?? $receptor['descActividad'] ?? null;
+
+        // Dirección: puede venir como campos planos o en sub-array 'direccion'
+        $departamento = $receptor['departamento'] 
+                        ?? ($receptor['direccion']['departamento'] ?? null) 
+                        ?? null;
+        $municipio = $receptor['municipio'] 
+                     ?? ($receptor['direccion']['municipio'] ?? null) 
+                     ?? null;
+        $complemento = $receptor['complemento'] 
+                       ?? ($receptor['direccion']['complemento'] ?? $receptor['direccion'] ?? null) 
+                       ?? null;
+
+        $this->dte['receptor']['tipoDocumento'] = $receptor['tipoDocumento'] ?? $receptor['tipo_documento'] ?? $this->dte['receptor']['tipoDocumento'];
+        $this->dte['receptor']['numDocumento']  = $numDocumento ?? ($receptor['numDocumento'] ?? $receptor['num_documento'] ?? $this->dte['receptor']['numDocumento']);
+        $this->dte['receptor']['nrc'] = null;
+        $this->dte['receptor']['nombre'] = $nombre ?? $this->dte['receptor']['nombre'];
+        $this->dte['receptor']['direccion'] = [
+            'departamento' => $departamento,
+            'municipio' => $municipio,
+            'complemento' => $complemento,
+        ];
+        $this->dte['receptor']['telefono'] = $receptor['telefono'] ?? $this->dte['receptor']['telefono'];
+        $this->dte['receptor']['correo']   = $receptor['correo'] ?? $this->dte['receptor']['correo'];
+        $this->dte['receptor']['codActividad'] = $cod_actividad ?? $this->dte['receptor']['codActividad'];
+        $this->dte['receptor']['descActividad'] = $desc_actividad ?? $this->dte['receptor']['descActividad'];
+    }
+
+    return $this;
+}
+
+
+    /**
+     * Recibe items en formato simple: [{descripcion, cantidad, precio}, ...]
+     * Los precios son asumidos con IVA incluido tal como hace tu ejemplo.
+     */
+    public function setItems(array $items, float $ivaPct = 0): self
+    {
+        $this->dte['cuerpoDocumento'] = [];
+        $subTotal = 0.0;
+        $totalIva = 0.0;
+
+        foreach ($items as $i => $it) {
+            $cantidad = isset($it['cantidad']) ? floatval($it['cantidad']) : 0.0;
+            $precioConIVA = isset($it['precio']) ? floatval($it['precio']) : 0.0;
+
+            $ventaGravada = round($precioConIVA * $cantidad, 2);
+            // ivaItem = (precioConIVA * cantidad) * ivaPct / (100 + ivaPct)
+            $ivaItem = $ivaPct > 0 ? round($ventaGravada * $ivaPct / (100 + $ivaPct), 2) : 0.00;
+
+            $subTotal += $ventaGravada;
+            $totalIva += $ivaItem;
+
+            $this->dte['cuerpoDocumento'][] = [
+                'numItem' => $i + 1,
+                'tipoItem' => $it['tipoItem'] ?? 2,
+                'numeroDocumento' => $it['numeroDocumento'] ?? null,
+                'cantidad' => $cantidad,
+                'codigo' => $it['codigo'] ?? null,
+                'codTributo' => $it['codTributo'] ?? null,
+                'uniMedida' => $it['uniMedida'] ?? 59,
+                'descripcion' => $it['descripcion'] ?? '',
+                'precioUni' => round($precioConIVA, 2),
+                'montoDescu' => $it['montoDescu'] ?? 0,
+                'ventaNoSuj' => 0,
+                'ventaExenta' => 0,
+                'ventaGravada' => $ventaGravada,
+                'tributos' => $it['tributos'] ?? null,
+                'psv' => $it['psv'] ?? 0,
+                'noGravado' => 0,
+                'ivaItem' => $ivaItem
+            ];
+        }
+
+        // llenar resumen provisional (se completará en build())
+        $this->dte['resumen'] = [
+            'totalNoSuj' => 0,
+            'totalExenta' => 0,
+            'totalGravada' => round($subTotal, 2),
+            'subTotalVentas' => round($subTotal, 2),
+            'descuNoSuj' => 0,
+            'descuExenta' => 0,
+            'descuGravada' => 0,
+            'porcentajeDescuento' => 0,
+            'totalDescu' => 0,
+            'tributos' => [],
+            'subTotal' => round($subTotal, 2),
+            'ivaRete1' => 0,
+            'reteRenta' => 0,
+            'montoTotalOperacion' => round($subTotal, 2),
+            'totalNoGravado' => 0,
+            'totalPagar' => round($subTotal, 2),
+            'totalLetras' => $this->numeroALetras(round($subTotal,2)),
+            'totalIva' => round($totalIva, 2),
+            'saldoFavor' => 0,
+            'condicionOperacion' => 1,
+            'pagos' => [
+                [
+                    'codigo' => '03',
+                    'montoPago' => round($subTotal, 2),
+                    'plazo' => null,
+                    'referencia' => "",
+                    'periodo' => null
+                ]
+            ],
+            'numPagoElectronico' => null
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Generar número en letras (simple). Puedes reemplazar por NumberFormatter si quieres.
+     */
+    protected function numeroALetras(float $numero): string
+    {
+        // Usa NumberFormatter si está disponible
+        if (class_exists(\NumberFormatter::class)) {
+            $formatter = new \NumberFormatter("es", \NumberFormatter::SPELLOUT);
+            $partes = explode('.', number_format($numero, 2, '.', ''));
+            $entero = $formatter->format($partes[0]);
+            $centavos = str_pad($partes[1], 2, '0', STR_PAD_LEFT);
+            if ($centavos === '00') {
+                return strtoupper("$entero DÓLARES");
+            }
+            return strtoupper("$entero DÓLARES CON $centavos CENTAVOS");
+        }
+        return strtoupper(number_format($numero, 2, '.', ''));
+    }
+
+    /**
+     * Build: realiza validaciones finales, ajusta cualquier valor faltante y devuelve el array final
+     */
+    public function build(): array
+    {
+        // Asegurar que identificacion tiene codigoGeneracion y numeroControl
+        if (empty($this->dte['identificacion']['codigoGeneracion'])) {
+            $this->dte['identificacion']['codigoGeneracion'] = $this->uuidV4();
+        }
+        if (empty($this->dte['identificacion']['numeroControl'])) {
+            // Default generico (mejor asignarlo fuera, pero dejamos fallback)
+            $this->dte['identificacion']['numeroControl'] = 'DTE-' .
+                str_pad((int)($this->dte['identificacion']['tipoDte'] ?? '1'), 2, '0', STR_PAD_LEFT) . '-' .
+                ($this->dte['emisor']['codEstableMH'] ?? 'M001') .
+                ($this->dte['emisor']['codPuntoVentaMH'] ?? 'P001') . '-' .
+                str_pad(rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
+        }
+
+        // Recalcular resumen si cuerpoDocumento tiene items
+        $subTotal = 0.0; $totalIva = 0.0;
+        foreach ($this->dte['cuerpoDocumento'] as $it) {
+            $subTotal += floatval($it['ventaGravada'] ?? 0);
+            $totalIva += floatval($it['ivaItem'] ?? 0);
+        }
+        $subTotal = round($subTotal, 2);
+        $totalIva = round($totalIva, 2);
+        $montoTotalOperacion = $subTotal;
+        $totalPagar = $montoTotalOperacion;
+
+        $this->dte['resumen']['totalGravada'] = $subTotal;
+        $this->dte['resumen']['subTotal'] = $subTotal;
+        $this->dte['resumen']['montoTotalOperacion'] = $montoTotalOperacion;
+        $this->dte['resumen']['totalPagar'] = $totalPagar;
+        $this->dte['resumen']['totalIva'] = $totalIva;
+        $this->dte['resumen']['totalLetras'] = $this->numeroALetras($totalPagar);
+        $this->dte['resumen']['pagos'][0]['montoPago'] = $totalPagar;
+
+        // Optional: eliminar claves null para limpiar
+        // $this->dte = $this->eliminarCamposNulos($this->dte);
+
+        return $this->dte;
+    }
+
+    /**
+     * Comprueba campos requeridos y devuelve array de errores o true si OK.
+     * Ejecutar BEFORE de firmar.
+     */
+    public function validate(): array|bool
+    {
+        $errors = [];
+
+        $ident = $this->dte['identificacion'];
+        $requiredIdent = ['version','ambiente','tipoDte','numeroControl','codigoGeneracion','fecEmi','horEmi','tipoMoneda'];
+        foreach ($requiredIdent as $k) {
+            if (empty($ident[$k]) && $ident[$k] !== '0') $errors[] = "identificacion.$k";
+        }
+
+        // Emisor
+        $em = $this->dte['emisor'];
+        foreach (['nit','nombre','codEstableMH','codPuntoVentaMH'] as $k) {
+            if (empty($em[$k])) $errors[] = "emisor.$k";
+        }
+        if (empty($em['direccion']['departamento'])) $errors[] = "emisor.direccion.departamento";
+        if (empty($em['direccion']['municipio'])) $errors[] = "emisor.direccion.municipio";
+
+        // Receptor
+        $r = $this->dte['receptor'];
+        foreach (['tipoDocumento','numDocumento','nombre'] as $k) {
+            if (empty($r[$k])) $errors[] = "receptor.$k";
+        }
+
+        // Items
+        if (empty($this->dte['cuerpoDocumento']) || !is_array($this->dte['cuerpoDocumento'])) {
+            $errors[] = "cuerpoDocumento.empty";
+        } else {
+            foreach ($this->dte['cuerpoDocumento'] as $idx => $it) {
+                if (!isset($it['cantidad']) || $it['cantidad'] <= 0) $errors[] = "cuerpoDocumento.$idx.cantidad";
+                if (!isset($it['precioUni'])) $errors[] = "cuerpoDocumento.$idx.precioUni";
+                if (!isset($it['ventaGravada'])) $errors[] = "cuerpoDocumento.$idx.ventaGravada";
+            }
+        }
+
+        // Totales consistentes
+        $calcSub = 0; $calcIva = 0;
+        foreach ($this->dte['cuerpoDocumento'] as $it) {
+            $calcSub += floatval($it['ventaGravada'] ?? 0);
+            $calcIva += floatval($it['ivaItem'] ?? 0);
+        }
+        if (abs($calcSub - ($this->dte['resumen']['subTotal'] ?? 0)) > 0.01) $errors[] = "resumen.subTotal_mismatch";
+        if (abs($calcIva - ($this->dte['resumen']['totalIva'] ?? 0)) > 0.01) $errors[] = "resumen.totalIva_mismatch";
+
+        return empty($errors) ? true : $errors;
+    }
+
+    /**
+     * Generador de UUID v4 (mayúsculas)
+     */
+    protected function uuidV4(): string
+    {
+        $data = random_bytes(16);
+        $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+        $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
+        $hex = bin2hex($data);
+        return strtoupper(
+            substr($hex, 0, 8) . '-' .
+            substr($hex, 8, 4) . '-' .
+            substr($hex, 12, 4) . '-' .
+            substr($hex, 16, 4) . '-' .
+            substr($hex, 20, 12)
+        );
+    }
+
+    /**
+     * Eliminar claves nulas (opcional)
+     */
+    protected function eliminarCamposNulos(array $arr): array
+    {
+        foreach ($arr as $k => &$v) {
+            if (is_array($v)) {
+                $v = $this->eliminarCamposNulos($v);
+                if (empty($v)) unset($arr[$k]);
+            } elseif ($v === null) {
+                unset($arr[$k]);
+            }
+        }
+        return $arr;
+    }
+}
+---
+<?php
+//app\Services\DTEService.php
+namespace App\Services;
+
+use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Token;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+use Exception;
+
+class DTEService
+{
+    protected string $haciendaUrl;
+    protected string $signerUrl;
+
+    public function __construct()
+    {
+        $this->haciendaUrl = rtrim(config('services.dte.hacienda_url', env('DTE_HACIENDA_URL', 'https://apitest.dtes.mh.gob.sv')), '/');
+
+        $signer = config('services.dte.signer_url', env('DTE_SIGNER_URL', 'http://localhost:8113'));
+        $this->signerUrl = rtrim($signer, '/');
+    }
+
+    /**
+     * Emite (firma + envía) un DTE y actualiza la fila correspondiente.
+     *
+     * @param  Dte  $dte
+     * @return array Resumen de la respuesta
+     * @throws Exception
+     */
+    public function emitir(Dte $dte): array
+    {
+        // 1) Cargar user y empresa emisora
+        $user = $dte->usuario_id ? \App\Models\User::find($dte->usuario_id) : null;
+        if (! $user) {
+            throw new Exception("No se encontró el usuario asociado al DTE (usuario_id={$dte->usuario_id}).");
+        }
+
+        $empresa = $user->empresa ?? null;
+        if (! $empresa instanceof Empresa) {
+            throw new Exception('Empresa emisora no encontrada para el usuario.');
+        }
+
+        // 2) Obtener token válido para la empresa
+        $token = $this->getTokenForEmpresa($empresa);
+
+        // 3) Preparar DTE (array)
+        $dteArray = $dte->dte_json;
+        if (! is_array($dteArray)) {
+            throw new Exception('El campo dte_json del DTE no es un array válido.');
+        }
+
+        // 4) Firmar en Docker
+        $jwtFirmado = $this->signWithDocker($empresa, $dteArray);
+
+        // Comprobar que se obtuvo algo del firmador
+        if (empty($jwtFirmado)) {
+            throw new Exception('Firma vacía: el firmador no devolvió contenido válido.');
+        }
+
+        // 5) Inyectar firma dentro del documento DTE (como hace el ejemplo)
+        $dteArray['firmaElectronica'] = $jwtFirmado;
+
+        // 6) Preparar paquete para Hacienda (siguiendo el ejemplo)
+        $paquete = [
+            'ambiente'         => $dteArray['identificacion']['ambiente'],
+            'idEnvio'          => time(),
+            'version'          => (int)$dteArray['identificacion']['version'],
+            'tipoDte'          => $dteArray['identificacion']['tipoDte'],
+            'documento'        => $jwtFirmado,  // JWT firmado como string
+        ];
+
+        // Log breve del payload (no incluir la firma completa)
+        Log::info('DTE -> Envío a Hacienda (resumen payload): ' . json_encode([
+            'idEnvio' => $paquete['idEnvio'],
+            'tipoDte' => $paquete['tipoDte'],
+            'ambiente'=> $paquete['ambiente'],
+            'documento_length' => strlen($jwtFirmado)
+        ]));
+
+        // 7) Envío a Hacienda
+        $urlSend = $this->haciendaUrl . '/fesv/recepciondte/';
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->timeout(90)
+            ->post($urlSend, $paquete);
+
+        $httpCode = $response->status();
+        $respBody = $response->body();
+        $respJson = null;
+        
+        try {
+            $respJson = $response->json();
+        } catch (\Throwable $ex) {
+            // no pudo parsear JSON
+            Log::warning("No se pudo parsear JSON de respuesta Hacienda: " . $ex->getMessage());
+        }
+
+        // Log completo de respuesta (útil para depuración)
+        Log::info("Respuesta Hacienda HTTP {$httpCode} - body: " . substr($respBody, 0, 4000));
+
+        // 8) Guardar respuesta en DTE
+        $dte->respuesta_json = $respJson ?? $respBody;
+        $dte->estado = $respJson['estado'] ?? ($httpCode === 200 ? 'PROCESADO' : 'ERROR_' . $httpCode);
+        $dte->codigo_generacion = $respJson['codigoGeneracion'] ?? $dte->codigo_generacion;
+        $dte->save();
+
+        if ($httpCode !== 200) {
+            // Lanzar excepción con el body (acotado) para que la UI lo muestre si corresponde
+            throw new Exception("Hacienda devolvió HTTP {$httpCode}: " . substr($respBody, 0, 2000));
+        }
+
+        return [
+            'http_code' => $httpCode,
+            'estado'    => $dte->estado,
+            'codigo'    => $dte->codigo_generacion,
+            'response'  => $respJson ?? $respBody,
+        ];
+    }
+
+    /**
+     * Obtiene o solicita token para la empresa.
+     *
+     * @param Empresa $empresa
+     * @return string
+     * @throws Exception
+     */
+    protected function getTokenForEmpresa(Empresa $empresa): string
+    {
+        $now = Carbon::now();
+        $tokRow = Token::where('empresa_id', $empresa->id)->first();
+
+        if ($tokRow && $tokRow->expire_at && Carbon::parse($tokRow->expire_at)->greaterThan($now)) {
+            Log::info("Token válido encontrado para empresa_id={$empresa->id}");
+            return $tokRow->token;
+        }
+
+        // Solicitar nuevo token
+        $urlAuth = $this->haciendaUrl . '/seguridad/auth/';
+
+        $resp = Http::asForm()
+            ->acceptJson()
+            ->timeout(30)
+            ->post($urlAuth, [
+                'user' => $empresa->api_user,
+                'pwd'  => $empresa->api_password,
+            ]);
+
+        if (! $resp->ok()) {
+            Log::error("Auth HACIENDA falló HTTP {$resp->status()} - body: " . $resp->body());
+            throw new Exception("Auth a Hacienda falló. HTTP {$resp->status()}");
+        }
+
+        $json = $resp->json();
+        if (! isset($json['status']) || strtoupper($json['status']) !== 'OK') {
+            $err = $json['error'] ?? json_encode($json);
+            throw new Exception("Auth rechazado por Hacienda: " . $err);
+        }
+
+        $bearer = $json['body']['token'] ?? null;
+        if (! $bearer) {
+            throw new Exception('No se recibió token en la respuesta de auth.');
+        }
+        
+        $token = preg_replace('/^Bearer\s+/i', '', trim($bearer));
+        $expireAt = Carbon::now()->addHours(23)->addMinutes(59)->toDateTimeString();
+
+        // 🔹 MÉTODO MÁS SEGURO: Buscar y actualizar o crear manualmente
+        $existingToken = Token::where('empresa_id', $empresa->id)->first();
+        
+        if ($existingToken) {
+            $existingToken->update([
+                'token' => $token,
+                'expire_at' => $expireAt,
+            ]);
+        } else {
+            Token::create([
+                'empresa_id' => $empresa->id,
+                'token' => $token,
+                'expire_at' => $expireAt,
+            ]);
+        }
+
+        Log::info("Token obtenido y guardado para empresa_id={$empresa->id} (expira: {$expireAt})");
+
+        return $token;
+    }
+
+    /**
+     * Llama al firmador Docker y retorna la firma/resultado.
+     *
+     * @param Empresa $empresa
+     * @param array $dteArray
+     * @return string
+     * @throws Exception
+     */
+    protected function signWithDocker(Empresa $empresa, array $dteArray): string
+    {
+        $payload = [
+            'nit'         => $empresa->api_user ?? $empresa->nit ?? null,
+            'activo'      => true,
+            'passwordPri' => $empresa->key_password ?? null,
+            'dteJson'     => $dteArray,
+        ];
+
+        // Log resumen (sin password)
+        $tmp = $payload;
+        unset($tmp['passwordPri']);
+        Log::info('Llamando firmador (docker) - payload summary: ' . json_encode($tmp));
+
+        $urlFirm = $this->signerUrl . '/firmardocumento/';
+
+        Log::info("Firmador URL utilizada: {$urlFirm}");
+
+        $resp = Http::timeout(60)
+            ->withHeaders([
+                'User-Agent' => 'factura-electronica-client',
+                'Content-Type' => 'application/json',
+            ])
+            ->post($urlFirm, $payload);
+
+        if (! $resp->ok()) {
+            Log::error("Firma falló HTTP {$resp->status()} - body: " . $resp->body());
+            throw new Exception("Firma falló, HTTP {$resp->status()}");
+        }
+
+        $json = $resp->json();
+
+        // Si el firmador devuelve ['body' => 'jwt_string'], extraer el body
+        if (isset($json['body']) && is_string($json['body'])) {
+            return $json['body'];
+        }
+
+        // Si devuelve directamente el JWT
+        if (is_string($json)) {
+            return $json;
+        }
+
+        // Fallback
+        throw new Exception('El firmador no devolvió un JWT válido: ' . json_encode($json));
+    }
+}
+---vistas---
+<x-app-layout>
+  <!-- resources\views\dte\select_tipo.blade.php -->
+  <x-slot name="header">
+    <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+      {{ __('Seleccionar Tipo de DTE') }}
+    </h2>
+  </x-slot>
+
+  <div class="py-6">
+    <div class="max-w-xl mx-auto sm:px-6 lg:px-8">
+      <div class="bg-white p-6 rounded-2xl shadow">
+        <form action="{{ route('dte.tipo.handle') }}" method="POST">
+  @csrf
+
+  <p class="mb-4 text-sm text-gray-600">Seleccione el tipo de Documento Electrónico que desea emitir:</p>
+
+  <div class="space-y-2">
+    @foreach($tipos as $t)
+      <label class="flex items-center gap-3 p-2 border rounded hover:bg-gray-50">
+        {{-- Enviamos **codigo** (más portable). Si prefieres enviar id cambia value por {{ $t->id }} --}}
+        <input type="radio" name="tipo" value="{{ $t->codigo }}"
+               class="form-radio" {{ old('tipo') == $t->codigo ? 'checked' : '' }}>
+        <div>
+          <div class="font-medium">{{ $t->codigo ?? '' }} — {{ $t->descripcion }}</div>
+          @if($t->codigo == old('tipo'))
+            <div class="text-xs text-gray-500">Seleccionado</div>
+          @endif
+        </div>
+      </label>
+    @endforeach
+  </div>
+
+  @error('tipo')<p class="text-red-600 mt-2">{{ $message }}</p>@enderror
+
+  <!-- dentro de resources/views/dte/select_tipo.blade.php, al final del form (antes del submit) -->
+<div class="mt-4 flex items-center justify-between">
+  <a id="direct-link" href="{{ route('dte.create') }}" 
+     class="text-sm text-gray-500 underline hidden">Abrir formulario seleccionado</a>
+
+  <button type="submit"
+          class="px-6 py-2 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700">
+    Continuar
+  </button>
+</div>
+
+@push('scripts')
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const radios = document.querySelectorAll('input[name="tipo"]');
+    const link = document.getElementById('direct-link');
+
+    function updateLink() {
+      const sel = document.querySelector('input[name="tipo"]:checked');
+      if (!sel) {
+        link.classList.add('hidden'); return;
+      }
+      const tipo = sel.value;
+      // si es 03 (CCF) apunta directo al formulario CCF, si no al create genérico con query param
+      if (tipo === '03') {
+        link.href = '{{ route("dte.ccf.create") }}';
+      } else {
+        link.href = '{{ route("dte.create") }}' + '?tipo=' + encodeURIComponent(tipo);
+      }
+      link.classList.remove('hidden');
+    }
+
+    radios.forEach(r => r.addEventListener('change', updateLink));
+    updateLink();
+  });
+</script>
+@endpush
+</form>
+
+      </div>
+    </div>
+  </div>
+</x-app-layout>
+---
+<x-app-layout>
+  <!-- resources\views\dte\index.blade.php -->
+  <x-slot name="header">
+    <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+      {{ __('Documentos Tributarios Electrónicos') }}
+    </h2>
+  </x-slot>
+
+  <div class="py-6">
+    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+      <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg">
+        <div class="p-6 bg-white border-b border-gray-200">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-medium text-gray-900">Listado de DTEs</h3>
+            <form action="{{ route('dte.enviar-pendientes') }}" method="POST">
+              @csrf
+              <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                Enviar DTEs Pendientes
+              </button>
+            </form>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Código Generación
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Fecha de Envío
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                @forelse($dtes as $dte)
+                  <tr>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm text-gray-900">{{ $dte->codigo_generacion }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm text-gray-900">{{ $dte->created_at->format('d/m/Y H:i') }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      @if($dte->estado === 'PENDIENTE')
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                          Pendiente
+                        </span>
+                      @elseif($dte->estado === 'PROCESADO')
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                          Procesado
+                        </span>
+                      @else
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                          {{ $dte->estado }}
+                        </span>
+                      @endif
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      @if($dte->estado === 'PENDIENTE')
+                        <form action="{{ route('dte.enviar', $dte) }}" method="POST" class="inline">
+                          @csrf
+                          <button type="submit" class="text-indigo-600 hover:text-indigo-900">
+                            Enviar
+                          </button>
+                        </form>
+                      @endif
+                    </td>
+                  </tr>
+                @empty
+                  <tr>
+                    <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">
+                      No hay DTEs registrados.
+                    </td>
+                  </tr>
+                @endforelse
+              </tbody>
+            </table>
+          </div>
+
+          <div class="mt-4">
+            {{ $dtes->links() }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</x-app-layout>
+---
+<x-app-layout>
+    <!-- resources\views\dte\factura\create.blade.php -->
+  <x-slot name="header">
+    <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+      {{ __('Emitir Factura (DTE)') }}
+    </h2>
+  </x-slot>
+
+  <div class="py-6">
+    <div class="max-w-5xl mx-auto sm:px-6 lg:px-8">
+      <div class="bg-white p-6 rounded-2xl shadow">
+
+        {{-- Mensajes --}}
+        @if(session('error'))
+          <div class="mb-4 p-3 bg-red-50 text-red-700 rounded">{{ session('error') }}</div>
+        @endif
+        @if(session('success'))
+          <div class="mb-4 p-3 bg-green-50 text-green-700 rounded">{{ session('success') }}</div>
+        @endif
+
+        <form 
+    action="{{ $tipo && $tipo->codigo === '03' ? route('dte.ccf.store') : route('dte.store') }}" 
+    method="POST" 
+    id="dteForm"
+>
+          @csrf
+
+          <input type="hidden" name="tipo" value="{{ $tipo->codigo ?? old('tipo', '01') }}">
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {{-- Cliente (DUI/NIT) --}}
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Cliente (DUI / NIT)</label>
+              <input type="text" name="cliente_numero" id="cliente_numero"
+                     value="{{ old('cliente_numero') }}"
+                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring"
+                     placeholder="Ingrese DUI o NIT y presione Enter o salga del campo" />
+              @error('cliente_numero')<p class="text-red-600 text-sm">{{ $message }}</p>@enderror
+              <p id="cliente-status" class="text-xs text-gray-500 mt-1"></p>
+            </div>
+
+            {{-- Sucursal --}}
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Sucursal</label>
+              <select name="sucursal_id" id="sucursal_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring">
+                <option value="">{{ __('(Ninguna)') }}</option>
+                @foreach($sucursales as $s)
+                  <option value="{{ $s->id }}" {{ old('sucursal_id') == $s->id ? 'selected' : '' }}>
+                    {{ $s->descripcion }}
+                  </option>
+                @endforeach
+              </select>
+            </div>
+
+            {{-- Caja --}}
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Caja</label>
+              <select name="caja_id" id="caja_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring">
+                <option value="">{{ __('(Ninguna)') }}</option>
+                @foreach($cajas as $c)
+                  <option value="{{ $c->id }}" {{ old('caja_id') == $c->id ? 'selected' : '' }}>
+                    {{ $c->descripcion }} ({{ $c->codigo_mh ?? '' }})
+                  </option>
+                @endforeach
+              </select>
+            </div>
+          </div>
+
+          {{-- VISIBLES (readonly) que se llenan al buscar cliente --}}
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Nombre / Razón social</label>
+              <input type="text" id="cliente_nombre_view" readonly
+                     class="mt-1 block w-full border-gray-200 bg-gray-50 rounded-md shadow-sm" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Correo</label>
+              <input type="email" id="cliente_correo_view" readonly
+                     class="mt-1 block w-full border-gray-200 bg-gray-50 rounded-md shadow-sm" />
+            </div>
+
+            <div class="col-span-1 md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700">Dirección</label>
+              <input type="text" id="cliente_direccion_view" readonly
+                     class="mt-1 block w-full border-gray-200 bg-gray-50 rounded-md shadow-sm" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Teléfono</label>
+              <input type="text" id="cliente_telefono_view" readonly
+                     class="mt-1 block w-full border-gray-200 bg-gray-50 rounded-md shadow-sm" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Departamento / Municipio</label>
+              <input type="text" id="cliente_depmun_view" readonly
+                     class="mt-1 block w-full border-gray-200 bg-gray-50 rounded-md shadow-sm" />
+            </div>
+          </div>
+
+          {{-- Hidden inputs que SI se enviarán al POST (estructura esperada por controller) --}}
+          <input type="hidden" name="receptor[tipoDocumento]" id="receptor_tipoDocumento" value="{{ old('receptor.tipoDocumento') }}" />
+          <input type="hidden" name="receptor[numDocumento]" id="receptor_numDocumento" value="{{ old('receptor.numDocumento', old('cliente_numero')) }}" />
+          <input type="hidden" name="receptor[nrc]" id="receptor_nrc" value="{{ old('receptor.nrc') }}" />
+          <input type="hidden" name="receptor[nombre]" id="receptor_nombre" value="{{ old('receptor.nombre') }}" />
+          <input type="hidden" name="receptor[codActividad]" id="receptor_codActividad" value="{{ old('receptor.codActividad') }}" />
+          <input type="hidden" name="receptor[descActividad]" id="receptor_descActividad" value="{{ old('receptor.descActividad') }}" />
+          <input type="hidden" name="receptor[direccion][departamento]" id="receptor_direccion_departamento" value="{{ old('receptor.direccion.departamento') }}" />
+          <input type="hidden" name="receptor[direccion][municipio]" id="receptor_direccion_municipio" value="{{ old('receptor.direccion.municipio') }}" />
+          <input type="hidden" name="receptor[direccion][complemento]" id="receptor_direccion_complemento" value="{{ old('receptor.direccion.complemento') }}" />
+          <input type="hidden" name="receptor[telefono]" id="receptor_telefono" value="{{ old('receptor.telefono') }}" />
+          <input type="hidden" name="receptor[correo]" id="receptor_correo" value="{{ old('receptor.correo') }}" />
+
+          {{-- IVA y totales visibles --}}
+          <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">IVA (%)</label>
+              <input type="number" step="0.01" name="iva" id="ivaPct" value="{{ old('iva', 13) }}"
+                     class="mt-1 block w-32 border-gray-300 rounded-md shadow-sm focus:ring" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Subtotal (Base)</label>
+              <input type="text" id="subtotal_view" readonly class="mt-1 block w-40 border-gray-200 bg-gray-50 rounded-md shadow-sm text-right" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">IVA monto</label>
+              <input type="text" id="iva_monto_view" readonly class="mt-1 block w-40 border-gray-200 bg-gray-50 rounded-md shadow-sm text-right" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Total</label>
+              <input type="text" id="total_view" readonly class="mt-1 block w-40 border-gray-200 bg-gray-50 rounded-md shadow-sm text-right" />
+            </div>
+          </div>
+
+          <hr class="my-4">
+
+          {{-- Ítems: tabla dinámica --}}
+          <div>
+            <h3 class="font-semibold mb-2">Ítems</h3>
+            <table class="w-full table-auto border-collapse">
+              <thead>
+                <tr>
+                  <th class="border px-2 py-1 text-left">Código</th>
+                  <th class="border px-2 py-1 text-left">Descripción</th>
+                  <th class="border px-2 py-1 text-right">Cantidad</th>
+                  <th class="border px-2 py-1 text-right">Precio (con IVA)</th>
+                  <th class="border px-2 py-1">Acción</th>
+                </tr>
+              </thead>
+              <tbody id="items-body">
+                {{-- Si hubo old inputs, reconstruimos --}}
+                @if(old('items'))
+                  @foreach(old('items') as $i => $it)
+                    <tr>
+                      <td class="border px-2 py-1">
+                        <input name="items[{{ $i }}][codigo]" value="{{ $it['codigo'] ?? '' }}" class="w-full" />
+                      </td>
+                      <td class="border px-2 py-1">
+                        <input name="items[{{ $i }}][descripcion]" value="{{ $it['descripcion'] ?? '' }}" class="w-full" />
+                      </td>
+                      <td class="border px-2 py-1 text-right">
+                        <input name="items[{{ $i }}][cantidad]" value="{{ $it['cantidad'] ?? 1 }}" class="w-20 text-right cantidad-input" />
+                      </td>
+                      <td class="border px-2 py-1 text-right">
+                        <input name="items[{{ $i }}][precio]" value="{{ $it['precio'] ?? '0.00' }}" class="w-28 text-right precio-input" />
+                      </td>
+                      <td class="border px-2 py-1 text-center">
+                        <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
+                      </td>
+                    </tr>
+                  @endforeach
+                @else
+                  <tr>
+                    <td class="border px-2 py-1">
+                      <input name="items[0][codigo]" class="w-full" />
+                    </td>
+                    <td class="border px-2 py-1">
+                      <input name="items[0][descripcion]" class="w-full" />
+                    </td>
+                    <td class="border px-2 py-1 text-right">
+                      <input name="items[0][cantidad]" value="1" class="w-20 text-right cantidad-input" />
+                    </td>
+                    <td class="border px-2 py-1 text-right">
+                      <input name="items[0][precio]" value="0.00" class="w-28 text-right precio-input" />
+                    </td>
+                    <td class="border px-2 py-1 text-center">
+                      <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
+                    </td>
+                  </tr>
+                @endif
+              </tbody>
+            </table>
+
+            <div class="mt-3 flex gap-2">
+              <button id="add-item" type="button" class="px-4 py-2 bg-gray-200 rounded">Agregar Ítem</button>
+            </div>
+          </div>
+
+          <div class="mt-6 flex justify-end">
+            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700">
+              Generar DTE (preparar)
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {{-- Modal para registrar cliente (opcional) --}}
+  <div class="fixed z-10 inset-0 overflow-y-auto hidden" id="clienteModal" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+      <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:align-middle sm:max-w-lg sm:w-full">
+        <div>
+          <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Registrar Cliente</h3>
+          <div class="mt-2">
+            <form id="clienteForm">
+              @csrf
+              <div class="grid grid-cols-1 gap-2">
+                <input type="text" id="m_nit" name="nit" placeholder="NIT" class="border rounded p-2" />
+                <input type="text" id="m_dui" name="dui" placeholder="DUI" class="border rounded p-2" />
+                <input type="text" id="m_nombre" name="nombre" placeholder="Nombre *" required class="border rounded p-2" />
+                <input type="email" id="m_correo" name="correo" placeholder="Correo" class="border rounded p-2" />
+                {{-- CAMBIO: direccion -> complemento --}}
+                <textarea id="m_complemento" name="complemento" placeholder="Complemento / Dirección" class="border rounded p-2"></textarea>
+                <input type="text" id="m_telefono" name="telefono" placeholder="Teléfono" class="border rounded p-2" />
+              </div>
+              <div class="mt-3 flex justify-end">
+                <button type="button" id="clienteCancel" class="px-3 py-1 bg-gray-200 rounded">Cancelar</button>
+                <button type="submit" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  @push('scripts')
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // ---------- helpers ----------
+      const qs = (s, root=document) => root.querySelector(s);
+      const qsa = (s, root=document) => Array.from(root.querySelectorAll(s));
+
+      // ---------- items add/remove/reindex ----------
+      const addBtn = qs('#add-item');
+      const tbody  = qs('#items-body');
+
+      function reindex() {
+        qsa('#items-body tr').forEach((tr, idx) => {
+          tr.querySelectorAll('input').forEach((inp) => {
+            const name = inp.getAttribute('name') || '';
+            const newName = name.replace(/items\[\d+\]/, `items[${idx}]`);
+            inp.setAttribute('name', newName);
+          });
+        });
+        // recalc totals whenever index changes
+        calcTotals();
+      }
+
+      addBtn.addEventListener('click', () => {
+        const idx = tbody.querySelectorAll('tr').length;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="border px-2 py-1">
+            <input name="items[${idx}][codigo]" class="w-full" />
+          </td>
+          <td class="border px-2 py-1">
+            <input name="items[${idx}][descripcion]" class="w-full" />
+          </td>
+          <td class="border px-2 py-1 text-right">
+            <input name="items[${idx}][cantidad]" value="1" class="w-20 text-right cantidad-input" />
+          </td>
+          <td class="border px-2 py-1 text-right">
+            <input name="items[${idx}][precio]" value="0.00" class="w-28 text-right precio-input" />
+          </td>
+          <td class="border px-2 py-1 text-center">
+            <button type="button" class="remove-row px-2 py-1 text-red-600">Eliminar</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+        reindex();
+      });
+
+      tbody.addEventListener('click', (e) => {
+        if (e.target.matches('.remove-row')) {
+          const tr = e.target.closest('tr');
+          tr.remove();
+          reindex();
+        }
+      });
+
+      // recalcular totales cuando cambian cantidad/precio/iva
+      function elementValues() {
+        const rows = qsa('#items-body tr');
+        return rows.map(tr => {
+          const qty = parseFloat(tr.querySelector('.cantidad-input')?.value || 0);
+          const price = parseFloat(tr.querySelector('.precio-input')?.value || 0);
+          return { qty, price };
+        });
+      }
+
+      function calcTotals() {
+        const ivaPct = parseFloat(qs('#ivaPct').value || 0);
+        let subtotal = 0;
+        let ivaMonto = 0;
+        const vals = elementValues();
+        vals.forEach(v => {
+          // price is WITH IVA
+          const priceNoIva = ivaPct > 0 ? v.price / (1 + ivaPct/100) : v.price;
+          const lineaBase = priceNoIva * v.qty;
+          const lineaIva = (v.price - priceNoIva) * v.qty;
+          subtotal += lineaBase;
+          ivaMonto += lineaIva;
+        });
+        const total = subtotal + ivaMonto;
+        qs('#subtotal_view').value = subtotal.toFixed(2);
+        qs('#iva_monto_view').value = ivaMonto.toFixed(2);
+        qs('#total_view').value = total.toFixed(2);
+      }
+
+      // Delegación para inputs de cantidad/precio (funciona para filas dinámicas)
+      tbody.addEventListener('input', (e) => {
+        if (e.target.matches('.cantidad-input') || e.target.matches('.precio-input')) {
+          calcTotals();
+        }
+      });
+      qs('#ivaPct').addEventListener('input', calcTotals);
+
+      // Inicializar totales al cargar
+      calcTotals();
+
+      // ---------- Autocompletar cliente ----------
+      const inputDoc = qs('#cliente_numero');
+      const statusEl = qs('#cliente-status');
+
+      // visibles
+      const vNombre = qs('#cliente_nombre_view');
+      const vCorreo = qs('#cliente_correo_view');
+      const vDireccion = qs('#cliente_direccion_view'); // mostrará "complemento"
+      const vTelefono = qs('#cliente_telefono_view');
+      const vDepMun = qs('#cliente_depmun_view');
+
+      // hidden (para enviar)
+      const hTipo = qs('#receptor_tipoDocumento');
+      const hNum  = qs('#receptor_numDocumento');
+      const hNrc  = qs('#receptor_nrc');
+      const hNombre = qs('#receptor_nombre');
+      const hCodAct = qs('#receptor_codActividad');
+      const hDescAct = qs('#receptor_descActividad');
+      const hDep = qs('#receptor_direccion_departamento');
+      const hMun = qs('#receptor_direccion_municipio');
+      const hComp = qs('#receptor_direccion_complemento');
+      const hTel = qs('#receptor_telefono');
+      const hCorreo = qs('#receptor_correo');
+
+      const buscarBase = "{{ route('clientes.buscar', ['doc' => 'DOC_PLACEHOLDER']) }}";
+
+      async function buscarYCompletar(doc) {
+        if (!doc || doc.length < 3) return;
+        statusEl.textContent = 'Buscando cliente...';
+
+        try {
+          const res = await fetch(buscarBase.replace('DOC_PLACEHOLDER', encodeURIComponent(doc)), {
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin'
+          });
+
+          if (res.status === 200) {
+            const json = await res.json();
+            if (json.found && json.cliente) {
+              const d = json.cliente;
+
+              // visibles
+              vNombre.value = d.nombre ?? '';
+              vCorreo.value = d.correo ?? '';
+              // CAMBIO: mostramos/completamos desde 'complemento' (fallback a 'direccion')
+              vDireccion.value = (d.complemento ?? d.direccion ?? '');
+              vTelefono.value = d.telefono ?? '';
+              vDepMun.value = ((d.departamento ?? '') + ' / ' + (d.municipio ?? '')).trim();
+
+              // hidden - populate exactos para el JSON del DTE
+              hNum.value = d.nit ?? d.dui ?? doc;
+              hTipo.value = d.nit ? '02' : (d.dui ? '13' : '13');
+              hNrc.value = d.nrc ?? '';
+              hNombre.value = d.nombre ?? '';
+              hCodAct.value = d.cod_actividad ?? '';
+              hDescAct.value = d.desc_actividad ?? '';
+              hDep.value = d.departamento ?? '';
+              hMun.value = d.municipio ?? '';
+              hComp.value = (d.complemento ?? d.direccion ?? '');
+              hTel.value = d.telefono ?? '';
+              hCorreo.value = d.correo ?? '';
+
+              statusEl.textContent = 'Cliente encontrado.';
+            } else {
+              clearCliente();
+              statusEl.textContent = 'Cliente no encontrado. Puede registrarlo o completar los datos.';
+              openClienteModalWithNumber(doc);
+            }
+          } else if (res.status === 404) {
+            clearCliente();
+            statusEl.textContent = 'Cliente no encontrado. Puede registrarlo o completar los datos.';
+            openClienteModalWithNumber(doc);
+          } else {
+            clearCliente();
+            statusEl.textContent = 'Error al buscar cliente.';
+          }
+        } catch (e) {
+          console.error(e);
+          statusEl.textContent = 'Error de conexión.';
+        }
+      }
+
+      function clearCliente() {
+        vNombre.value = vCorreo.value = vDireccion.value = vTelefono.value = vDepMun.value = '';
+        hTipo.value = hNum.value = hNrc.value = hNombre.value = hCodAct.value = hDescAct.value = '';
+        hDep.value = hMun.value = hComp.value = hTel.value = hCorreo.value = '';
+      }
+
+      function openClienteModalWithNumber(doc) {
+        qs('#m_dui').value = doc;
+        qs('#clienteModal').classList.remove('hidden');
+      }
+
+      // eventos buscar al salir (blur) o Enter
+      inputDoc.addEventListener('blur', () => {
+        const val = inputDoc.value.trim();
+        if (val.length >= 3) buscarYCompletar(val);
+      });
+      inputDoc.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const val = inputDoc.value.trim();
+          if (val.length >= 3) buscarYCompletar(val);
+        }
+      });
+
+      // ---------- Modal: registrar cliente ----------
+      const clienteModal = qs('#clienteModal');
+      qs('#clienteCancel').addEventListener('click', () => clienteModal.classList.add('hidden'));
+
+      qs('#clienteForm').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const form = ev.target;
+        const data = new FormData(form);
+        data.append('_token', '{{ csrf_token() }}');
+
+        try {
+          const res = await fetch("{{ route('clientes.store') }}", {
+            method: 'POST',
+            body: data,
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(()=>({error:'error'}));
+            alert(err.error || 'Error creando cliente');
+            return;
+          }
+          const json = await res.json();
+          clienteModal.classList.add('hidden');
+          inputDoc.value = json.nit ?? json.dui ?? inputDoc.value;
+          buscarYCompletar(inputDoc.value);
+        } catch (e) {
+          console.error(e);
+          alert('Error al crear cliente');
+        }
+      });
+
+    }); // DOMContentLoaded
+  </script>
+  @endpush
+
+</x-app-layout>
+---

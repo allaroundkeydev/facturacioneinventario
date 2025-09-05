@@ -1,0 +1,370 @@
+<?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+//app\Models\Dte.php
+class Dte extends Model
+{
+    protected $table = 'dtes';
+
+    protected $fillable = [
+        'usuario_id',
+        'dte_json',
+        'respuesta_json',
+        'estado',
+        'codigo_generacion',
+    ];
+
+    protected $casts = [
+        'dte_json' => 'array',
+        'respuesta_json' => 'array',
+    ];
+}
+
+---
+<?php
+// app/Http/Controllers/DTE/EnviarDteController.php
+namespace App\Http\Controllers\DTE;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
+use App\Models\Dte;
+use App\Services\DTEService;
+use App\Services\CcfDteService;
+use Exception;
+use Illuminate\Support\Facades\Log;
+
+class EnviarDteController extends Controller
+{
+    protected DTEService $dteService;
+    protected CcfDteService $ccfService;
+
+    public function __construct(DTEService $dteService, CcfDteService $ccfService)
+    {
+        $this->dteService = $dteService;
+        $this->ccfService  = $ccfService;
+    }
+
+    /**
+     * Envía un DTE específico a Hacienda
+     *
+     * @param  Dte  $dte
+     * @return RedirectResponse
+     */
+    public function enviar(Dte $dte): RedirectResponse
+    {
+        try {
+            if ($dte->estado !== 'PENDIENTE') {
+                return redirect()->route('dte.index')
+                    ->with('error', 'El DTE no está en estado pendiente de envío.');
+            }
+
+            // Determinar tipo: preferir $dte->tipo (si lo guardaste), sino leer del json
+            $tipo = $dte->tipo ?? ($dte->dte_json['identificacion']['tipoDte'] ?? null);
+            $tipo = is_string($tipo) ? ltrim($tipo, '0') : $tipo; // por si viene '03' o '3'
+
+            // Elegir servicio según tipo
+            if ((string)$tipo === '3' || (string)$tipo === '03') {
+                // CCF -> usar servicio específico
+                $result = $this->ccfService->emitir($dte);
+            } else {
+                // Default: usar servicio general (factura u otros)
+                $result = $this->dteService->emitir($dte);
+            }
+
+            return redirect()->route('dte.index')
+                ->with('success', 'DTE enviado correctamente. Estado: ' . ($result['estado'] ?? 'N/A'));
+        } catch (Exception $e) {
+            Log::error("Error al enviar DTE id={$dte->id}: " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return redirect()->route('dte.index')
+                ->with('error', 'Error al enviar el DTE: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Envía todos los DTEs pendientes a Hacienda
+     *
+     * @return RedirectResponse
+     */
+    public function enviarPendientes(): RedirectResponse
+    {
+        $enviados = 0;
+        $errores = 0;
+
+        $dtesPendientes = Dte::where('estado', 'PENDIENTE')->get();
+
+        foreach ($dtesPendientes as $dte) {
+            try {
+                $tipo = $dte->tipo ?? ($dte->dte_json['identificacion']['tipoDte'] ?? null);
+                $tipo = is_string($tipo) ? ltrim($tipo, '0') : $tipo;
+
+                if ((string)$tipo === '3' || (string)$tipo === '03') {
+                    $this->ccfService->emitir($dte);
+                } else {
+                    $this->dteService->emitir($dte);
+                }
+                $enviados++;
+            } catch (Exception $e) {
+                $errores++;
+                Log::error("Error al enviar DTE id={$dte->id}: " . $e->getMessage(), [
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+
+        return redirect()->route('dte.index')
+            ->with('success', "Proceso completado. Enviados: {$enviados}. Errores: {$errores}.");
+    }
+}
+---
+<?php
+//app\Models\Empresa.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Empresa extends Model
+{
+    protected $table = 'empresas';
+    
+    protected $fillable = [
+    'usuario_id', 'nit', 'dui', 'razon_social', 'nrc', 'direccion',
+    'telefono', 'correo', 'cod_actividad', 'desc_actividad',
+    'nombre_comercial', 'tipo_establecimiento', 'departamento',
+    'municipio', 'cod_estable_mh', 'cod_estable_int',
+    'cod_punto_venta_mh', 'cod_punto_venta_int',
+    'crt_path', 'key_path', 'key_password',
+    'api_user', 'api_password','gestiona_stock',
+];
+
+public function user()
+{
+    return $this->belongsTo(\App\Models\User::class, 'usuario_id');
+}
+
+
+    public function sucursales()
+    {
+        return $this->hasMany(Sucursal::class, 'empresa_id');
+    }
+
+    public function dtes()
+    {
+        return $this->hasMany(Dte::class, 'usuario_id');
+    }
+
+    public function cajeros()
+{
+    return $this->hasMany(Cajero::class, 'empresa_id');
+}
+
+public function productos()
+{
+    return $this->hasMany(Producto::class,'empresa_id');
+}
+
+public function servicios()
+{
+    return $this->hasMany(Servicio::class,'empresa_id');
+}
+
+
+
+}
+---
+<?php
+//app\Models\TipoDocumento.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class TipoDocumento extends Model
+{
+    protected $table = 'tipos_documento';
+    protected $primaryKey = 'codigo';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+}
+---
+<?php
+//app\Models\Cliente.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Cliente extends Model
+{
+    protected $table = 'clientes';
+    
+    protected $fillable = [
+        'nit', 'dui', 'nombre', 'correo', 'complemento',
+        'telefono', 'tipo_documento', 'departamento', 'municipio',  // nuevos campos DTE
+        'nrc', 'cod_actividad','desc_actividad',
+    ];
+
+    public function getTipoDocumentoAttribute()
+    {
+        return $this->nit ? '02' : '13';
+    }
+
+    public function getNumeroDocumentoAttribute()
+    {
+        return $this->nit ?? $this->dui;
+    }
+
+    public function dtes()
+    {
+        return $this->hasMany(Dte::class);
+    }
+}
+---
+<?php
+//app\Models\Token.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Token extends Model
+{
+    use HasFactory;
+
+    // 🔹 CRÍTICO: Configurar correctamente la clave primaria
+    protected $table = 'tokens';
+    protected $primaryKey = 'empresa_id';
+    public $incrementing = false;
+    protected $keyType = 'int';
+
+    protected $fillable = [
+        'empresa_id',
+        'token',
+        'expire_at',
+    ];
+
+    protected $casts = [
+        'expire_at' => 'datetime',
+    ];
+
+    public function empresa(): BelongsTo
+    {
+        return $this->belongsTo(Empresa::class, 'empresa_id');
+    }
+}
+---
+<?php
+//app\Http\Controllers\DTE\DashboardController.php
+namespace App\Http\Controllers\DTE;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
+use App\Models\TipoDocumento;
+use App\Models\Dte;
+
+class DashboardController extends Controller
+{
+    public function selectTipo(): View
+    {
+        $tipos = TipoDocumento::orderBy('codigo')->get();
+        return view('dte.select_tipo', compact('tipos'));
+    }
+
+    /**
+     * Maneja la selección de tipo de DTE.
+     * Redirige a formulario específico para CCF (03) o al formulario genérico de creación.
+     *
+     * @param Request $request
+     * @return RedirectResponse
+     */
+    public function handleTipo(Request $request): RedirectResponse
+    {
+        // Validamos únicamente el campo enviado
+        $data = $request->validate([
+            'tipo' => ['nullable', 'string'],
+            'tipo_documento_id' => ['nullable', 'integer'],
+        ]);
+
+        $codigo = null;
+
+        if (!empty($data['tipo'])) {
+            $t = TipoDocumento::where('codigo', $data['tipo'])->first();
+            if (! $t) {
+                return back()->withErrors(['tipo' => 'Tipo de documento no válido'])->withInput();
+            }
+            $codigo = $t->codigo;
+        } elseif (!empty($data['tipo_documento_id'])) {
+            $t = TipoDocumento::find($data['tipo_documento_id']);
+            if (! $t) {
+                return back()->withErrors(['tipo_documento_id' => 'Tipo de documento no válido'])->withInput();
+            }
+            $codigo = $t->codigo;
+        } else {
+            return back()->withErrors(['tipo' => 'Seleccione un tipo de documento.'])->withInput();
+        }
+
+        // Si es CCF (03) ir al formulario específico de CCF
+        if ($codigo === '03') {
+            return redirect()->route('dte.ccf.create', ['tipo' => $codigo]);
+        }
+
+        // En otros casos redirigimos a la creación genérica (puedes usar create que ya tengas)
+        return redirect()->route('dte.create', ['tipo' => $codigo]);
+    }
+
+    /**
+     * Muestra el listado de DTEs
+     */
+    public function dteIndex()
+    {
+        $dtes = Dte::orderBy('created_at', 'desc')->paginate(10);
+        return view('dte.index', compact('dtes'));
+    }
+}
+---
+---
+<?php
+
+// app/Http/Middleware/EnsureIsAdmin.php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class EnsureIsAdmin
+{
+    public function handle(Request $request, Closure $next)
+    {
+        // Sólo si NO es cajero
+        if (Auth::user()->cajero()->exists()) {
+            abort(403, 'No autorizado');
+        }
+        return $next($request);
+    }
+}
+---
+<?php
+
+// app/Http/Middleware/EnsureIsCajero.php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class EnsureIsCajero
+{
+    public function handle(Request $request, Closure $next)
+    {
+        // Si no está en cajeros, aborta
+        if (! Auth::user()->cajero()->exists()) {
+            abort(403, 'No autorizado');
+        }
+        return $next($request);
+    }
+}
