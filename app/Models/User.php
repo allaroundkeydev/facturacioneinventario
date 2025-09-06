@@ -46,13 +46,7 @@ class User extends Authenticatable
         ];
     }
 
-    /**
-     * Relación a la empresa (si existe).
-     */
-    public function empresa()
-    {
-        return $this->hasOne(\App\Models\Empresa::class, 'usuario_id');
-    }
+ 
 
     /**
      * Relación a cajero (si existe).
@@ -71,4 +65,13 @@ class User extends Authenticatable
     {
         return $this->cajero()->exists() ? 'cajero' : 'admin';
     }
+
+    /**
+     * Un usuario puede tener varias empresas
+     */
+    public function empresa(){
+        return $this->hasOne(\App\Models\Empresa::class, 'usuario_id');
+    }
+
+
 }

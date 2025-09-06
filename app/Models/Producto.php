@@ -1,7 +1,9 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\UnidadMedida;
 
 class Producto extends Model
 {
@@ -18,6 +20,15 @@ class Producto extends Model
 
     public function empresa()
     {
-        return $this->belongsTo(Empresa::class,'empresa_id');
+        return $this->belongsTo(Empresa::class, 'empresa_id');
+    }
+
+    public function unidadMedida()
+    {
+        return $this->belongsTo(
+            UnidadMedida::class,
+            'unidad_medida',   // campo en productos
+            'descripcion'      // clave en unidades_medida
+        );
     }
 }

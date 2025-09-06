@@ -147,6 +147,31 @@ class ClienteController extends Controller
         return response()->json(['found' => true, 'cliente' => $data], 200);
     }
 
+
+    public function buscarPorNombre(Request $request)
+{
+    $term = $request->query('name');
+
+    $clientes = Cliente::where('nombre', 'like', "%{$term}%")
+        ->limit(10)
+        ->select([
+            'dui',
+            'nit',
+            'nombre',
+            'telefono',
+            'correo',
+            'complemento as direccion',  // aliasamos complemento
+            'departamento',
+            'municipio',
+            'nrc',
+            'cod_actividad',
+            'desc_actividad',
+        ])
+        ->get();
+
+    return response()->json($clientes);
+}
+
     /**
      * Alternativa: búsqueda por ruta con parámetro (opcional)
      * Si tienes una ruta como /clientes/buscar/{doc} puedes mapearla a este método.

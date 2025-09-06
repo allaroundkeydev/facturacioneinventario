@@ -96,9 +96,11 @@ Route::post('/dte/{dte}/payment', [\App\Http\Controllers\DTE\FacturaController::
     ->middleware(['auth','verified']);
 
 
+
+
 // Ruta para buscar cliente por DUI/NIT (GET) usando query param ?doc=...
     // Ejemplo: /clientes/buscar?doc=04319321-6
-    Route::get('/clientes/buscar', [\App\Http\Controllers\DTE\ClienteController::class, 'buscar'])
+    Route::get('/clientes/buscar', [ClienteController::class, 'buscar'])
          ->name('clientes.buscar')
          ->middleware(['auth','verified']);
 
@@ -182,5 +184,11 @@ Route::resource('servicios', ServicioController::class)
     // ————————————————————————————————————————————————————————————————————————
     Route::get('/municipios/{departamento}', [MunicipioController::class, 'getByDepartamento']);
     Route::get('/actividades',               [ActividadController::class, 'suggest']);
+
+        Route::get('clientes/buscar-nombre', [ClienteController::class, 'buscarPorNombre'])
+     ->name('clientes.buscarNombre');
+
+     Route::get('productos/autocomplete', [ProductoController::class, 'autocomplete'])
+     ->name('productos.autocomplete');
 
 });
